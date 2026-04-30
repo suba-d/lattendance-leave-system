@@ -28,7 +28,15 @@ import { join } from "node:path";
 import { PrismaClient, LeaveStatus, LeaveUnit, Prisma, Role } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 
-const prisma = new PrismaClient();
+// Use DIRECT_URL (session pooler / direct connection) for one-shot scripts.
+// The default DATABASE_URL points at Supabase's transaction pooler, where
+// prepared-statement caching collides with pgbouncer when running batches
+// (causes "prepared statement \"s0\" already exists" 42P05 errors).
+const prisma = new PrismaClient({
+  datasources: {
+    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
+  },
+});
 
 const TZ = process.env.TZ || "Asia/Taipei";
 const DUMP_PATH = join(process.cwd(), "leave_system_dump.sql");
