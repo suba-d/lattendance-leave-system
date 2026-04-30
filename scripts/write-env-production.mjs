@@ -30,6 +30,14 @@ function shouldKeep(key) {
   return ALLOWLIST_PREFIXES.some((p) => key.startsWith(p));
 }
 
+// Auth.js v5 reads AUTH_URL specifically when generating OAuth callback
+// URLs; if it's missing it defaults to http://localhost:3000 and the
+// LINE login redirect lands on a dead localhost host. Derive it from
+// APP_URL (which the operator already sets) when AUTH_URL is unset.
+if (!process.env.AUTH_URL && process.env.APP_URL) {
+  process.env.AUTH_URL = process.env.APP_URL.replace(/\/$/, "");
+}
+
 const lines = [];
 const keys = [];
 for (const key of Object.keys(process.env).sort()) {
