@@ -2,11 +2,14 @@
 // rest of the app can import typed helpers.
 
 // Linux POSIX environments may set TZ with a leading ":" prefix
-// (e.g. ":UTC"), which JavaScript Intl APIs reject as invalid. Strip the
-// prefix and fall back to the office default if the value is empty.
+// (e.g. ":UTC"), which is the OS default rather than an explicit
+// operator choice. Treat such values as "not set" and fall back to
+// the office default — otherwise an Amplify build leak silently
+// shifts every displayed time to UTC.
 function sanitizeTz(raw: string | undefined): string {
   if (!raw) return "Asia/Taipei";
-  const cleaned = raw.replace(/^:/, "").trim();
+  if (raw.startsWith(":")) return "Asia/Taipei";
+  const cleaned = raw.trim();
   return cleaned || "Asia/Taipei";
 }
 
