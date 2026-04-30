@@ -19,7 +19,8 @@ export const authConfig = {
       const isPublic =
         path.startsWith("/bind") ||
         path.startsWith("/liff") ||
-        path.startsWith("/api/line");
+        path.startsWith("/api/line") ||
+        path.startsWith("/api/healthz");
 
       if (isPublic) return true;
       if (isLoginRoute) {
