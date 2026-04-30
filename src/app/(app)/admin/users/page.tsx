@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
@@ -94,7 +95,11 @@ export default async function AdminUsersPage({
           <tbody>
             {users.map((u) => (
               <tr key={u.id} className="border-b border-[var(--color-border)] last:border-0 align-top">
-                <td className="py-2">{u.name}</td>
+                <td className="py-2">
+                  <Link href={`/admin/users/${u.id}`} className="text-blue-600 hover:underline font-medium">
+                    {u.name}
+                  </Link>
+                </td>
                 <td className="py-2">{u.email}</td>
                 <td className="py-2">
                   <span className="badge">{u.role === "ADMIN" ? "管理者" : "員工"}</span>

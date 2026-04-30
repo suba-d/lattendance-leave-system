@@ -194,6 +194,16 @@ LINE_CHANNEL_ACCESS_TOKEN=xxx APP_URL=https://... NEXT_PUBLIC_LIFF_ID=xxx \
 - 在電腦：到登入頁點「用 LINE 登入」
 - 在手機：直接從 LINE Rich Menu 點任一按鈕進系統
 
+#### Admin 自己怎麼綁 LINE？
+
+跟員工一樣的流程，admin 自己幫自己產綁定連結：
+
+1. 用 `/login?mode=email` + `SEED_ADMIN_*` 登入
+2. 進 `/admin/users`，找到自己那列
+3. 點「產生綁定連結」（同樣對自己有效）
+4. 在 LINE 內 / 用手機開那個連結 → 用 LINE 授權
+5. 之後就能直接 LINE 登入；email/密碼變成救援用 backup
+
 ## Google Calendar 同步（optional）
 
 1. 到 Google Cloud Console 建 Service Account，下載 JSON key
