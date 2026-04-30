@@ -15,6 +15,10 @@ frontend:
         # Idempotent legacy import — no-ops if leave_system_dump.sql is absent
         # or all rows are already imported (matched by legacyId).
         - pnpm exec tsx scripts/import-legacy.ts
+        # Amplify Hosting (SSR) doesn't reliably forward console-defined env
+        # vars to the runtime Lambda. Write them into .env.production at
+        # build time; Next.js automatically loads this file at runtime.
+        - env | grep -E '^(AUTH_SECRET|DATABASE_URL|DIRECT_URL|APP_URL|AUTH_URL|TZ|TRUST_PROXY|OFFICE_IP_ALLOWLIST|WORK_START_HOUR|WORK_END_HOUR|SEED_ADMIN_|GOOGLE_|LINE_|NEXT_PUBLIC_LIFF_ID)=' > .env.production
         - pnpm build
   artifacts:
     baseDirectory: .next
