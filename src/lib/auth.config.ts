@@ -5,6 +5,11 @@ import type { NextAuthConfig } from "next-auth";
 export const authConfig = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  // Required when running behind a reverse proxy / CDN (Amplify, Vercel,
+  // Cloudflare). Without this, NextAuth v5 returns
+  // "There was a problem with the server configuration." because the host
+  // header from the proxy doesn't match its strict default policy.
+  trustHost: true,
   providers: [],
   callbacks: {
     authorized({ auth, request }) {
