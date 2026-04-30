@@ -1,23 +1,36 @@
+import Link from "next/link";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
+
+export const dynamic = "force-dynamic";
 
 export default async function AdminAttendancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; userId?: string }>;
 }) {
   const sp = await searchParams;
   const today = new Date().toISOString().slice(0, 10);
   const date = sp?.date || today;
+  const userId = sp?.userId || "";
 
-  // We stored workDate as DATE in office TZ; query by exact match.
-  const events = await prisma.clockEvent.findMany({
-    where: {
-      workDate: new Date(`${date}T00:00:00.000Z`),
-    },
-    orderBy: [{ userId: "asc" }, { occurredAt: "asc" }],
-    include: { user: true },
-  });
+  const where: Prisma.ClockEventWhereInput = {
+    workDate: new Date(`${date}T00:00:00.000Z`),
+  };
+  if (userId) where.userId = userId;
+
+  const [users, events] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.clockEvent.findMany({
+      where,
+      orderBy: [{ userId: "asc" }, { occurredAt: "asc" }],
+      include: { user: true },
+    }),
+  ]);
 
   // Group by user.
   const byUser = new Map<string, typeof events>();
@@ -28,13 +41,29 @@ export default async function AdminAttendancePage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">每日打卡</h1>
-        <form className="flex gap-2 items-center">
-          <input type="date" name="date" defaultValue={date} className="input" />
-          <button type="submit" className="btn">查詢</button>
-        </form>
-      </div>
+      <h1 className="text-2xl font-semibold">每日打卡</h1>
+
+      <form className="card flex flex-wrap gap-3 items-end text-sm">
+        <div>
+          <label className="label" htmlFor="date">日期</label>
+          <input id="date" type="date" name="date" defaultValue={date} className="input" />
+        </div>
+        <div>
+          <label className="label" htmlFor="userId">員工</label>
+          <select id="userId" name="userId" defaultValue={userId} className="input">
+            <option value="">全部</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className="btn btn-primary">查詢</button>
+        {userId ? (
+          <Link href={`/admin/attendance?date=${date}`} className="btn">清除員工篩選</Link>
+        ) : null}
+      </form>
 
       {byUser.size === 0 ? (
         <div className="card text-center py-12 muted">{date} 無打卡紀錄</div>
@@ -51,13 +80,17 @@ export default async function AdminAttendancePage({
               </tr>
             </thead>
             <tbody>
-              {Array.from(byUser.entries()).map(([userId, list]) => {
+              {Array.from(byUser.entries()).map(([uid, list]) => {
                 const ordered = [...list].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
                 const firstIn = ordered.find((e) => e.kind === "IN");
                 const lastOut = [...ordered].reverse().find((e) => e.kind === "OUT");
                 return (
-                  <tr key={userId} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2">{ordered[0]?.user.name}</td>
+                  <tr key={uid} className="border-b border-[var(--color-border)] last:border-0">
+                    <td className="py-2">
+                      <Link href={`/admin/users/${uid}`} className="text-blue-600 hover:underline">
+                        {ordered[0]?.user.name}
+                      </Link>
+                    </td>
                     <td className="py-2">
                       {firstIn ? formatDateTimeInOfficeTZ(firstIn.occurredAt, "HH:mm") : "—"}
                     </td>
@@ -68,7 +101,7 @@ export default async function AdminAttendancePage({
                       {ordered
                         .map(
                           (e) =>
-                            `${e.kind === "IN" ? "上" : "下"} ${formatDateTimeInOfficeTZ(e.occurredAt, "HH:mm")}`
+                            `${e.kind === "IN" ? "上" : "下"} ${formatDateTimeInOfficeTZ(e.occurredAt, "HH:mm")}`,
                         )
                         .join(", ")}
                     </td>
