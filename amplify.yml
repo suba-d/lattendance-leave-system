@@ -12,9 +12,11 @@ frontend:
         - pnpm exec prisma migrate deploy
         # Seed leave types + admin user (idempotent upserts).
         - pnpm exec tsx prisma/seed.ts
-        # Idempotent legacy import — no-ops if leave_system_dump.sql is absent
-        # or all rows are already imported (matched by legacyId).
-        - pnpm exec tsx scripts/import-legacy.ts
+        # Idempotent legacy import — only run when the dump is present
+        # in the repo. The first deploy after merge has the file; once
+        # we delete it (post-import-verified), this becomes a no-op
+        # without paying tsx + Prisma cold-start time.
+        - if [ -f leave_system_dump.sql ]; then pnpm exec tsx scripts/import-legacy.ts; fi
         # Amplify Hosting (SSR) doesn't reliably forward console-defined env
         # vars to the runtime Lambda. Write them into .env.production at
         # build time; Next.js automatically loads this file at runtime.
@@ -31,4 +33,7 @@ frontend:
     paths:
       - node_modules/**/*
       - .next/cache/**/*
+      # pnpm content-addressable store — speeds up `pnpm install` on
+      # subsequent builds by avoiding re-downloading every package.
       - ~/.local/share/pnpm/store/v3/**/*
+      - ~/.pnpm-store/v3/**/*
