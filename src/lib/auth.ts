@@ -2,6 +2,7 @@ import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import LINE from "next-auth/providers/line";
 import bcrypt from "bcryptjs";
+import { inspect } from "node:util";
 import { z } from "zod";
 import { prisma } from "./db";
 import { authConfig } from "./auth.config";
@@ -46,24 +47,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   // Print every error detail to stderr → Amplify Function logs. The
   // default logger only emits the error name (e.g. "OAuthCallbackError"),
-  // hiding the actual provider response that explains *why*.
+  // hiding the actual provider response that explains *why*. Use
+  // util.inspect with depth:null so non-enumerable + nested cause
+  // chains are dumped too.
+  debug: !!process.env.AUTH_DEBUG,
   logger: {
     error(error) {
       console.error(
         "[auth][error]",
-        error?.name ?? "Error",
-        error?.message ?? "",
-        error?.cause ? `cause=${JSON.stringify(error.cause, null, 2)}` : "",
-        error?.stack ?? "",
+        inspect(error, { depth: null, getters: true, showHidden: false }),
       );
     },
     warn(code) {
       console.warn("[auth][warn]", code);
     },
     debug(code, metadata) {
-      // Only log debug when explicitly enabled — otherwise spammy.
       if (process.env.AUTH_DEBUG) {
-        console.log("[auth][debug]", code, metadata);
+        console.log("[auth][debug]", code, inspect(metadata, { depth: null }));
       }
     },
   },
@@ -107,11 +107,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
 
     // Standard LINE OAuth (web flow) — only registered if env vars set.
+    // Drop PKCE: LINE's OIDC support has historically been spotty with
+    // Auth.js's PKCE flow (callback fails with a generic OAuth provider
+    // error and no cause); the manual bind flow which omits PKCE works
+    // fine. State + nonce checks are kept.
     ...(lineLoginEnabled
       ? [
           LINE({
             clientId: LINE_LOGIN_CHANNEL_ID,
             clientSecret: LINE_LOGIN_CHANNEL_SECRET,
+            checks: ["state", "nonce"],
           }),
         ]
       : []),
