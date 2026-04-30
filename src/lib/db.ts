@@ -4,22 +4,33 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// Force `connection_limit=1` on the runtime URL. With Supabase pgbouncer
-// (transaction mode at port 6543), Prisma's prepared statement caching
-// collides with rotated connections under any kind of parallel query
-// load (Promise.all in pages) and surfaces as
-// "prepared statement \"s0\" already exists" (Postgres 42P05).
+// At runtime we want the Supabase Transaction pooler (port 6543) — it has
+// a generous client limit (~200) compared to the Session pooler (15),
+// which would saturate as Lambda warm pool grows.
 //
-// Pinning the pool to a single connection sidesteps the entire class
-// of bug regardless of which Supabase pooler mode the operator picked,
-// at the cost of serializing the queries from a single Lambda instance
-// — a non-issue for a 10-person internal app.
-function ensureConnectionLimit(url: string | undefined): string | undefined {
+// The Transaction pooler comes with two well-known Prisma footguns:
+//   - It rotates backend connections per transaction, so prepared
+//     statements named s0/s1/... collide across connections (42P05).
+//   - Prisma's default prepared-statement caching trips this even on
+//     simple parallel queries (Promise.all).
+//
+// Both are neutralized by adding two query params to the URL:
+//   pgbouncer=true        → Prisma stops caching prepared statements
+//   connection_limit=1    → Single shared connection per Lambda
+//
+// We inject them automatically so operators don't have to remember.
+function ensureRuntimeFlags(url: string | undefined): string | undefined {
   if (!url) return url;
   try {
     const u = new URL(url);
     if (!u.searchParams.has("connection_limit")) {
       u.searchParams.set("connection_limit", "1");
+    }
+    // Transaction pooler is identifiable by port 6543; if the operator
+    // pointed DATABASE_URL at session/direct (5432), pgbouncer flag is
+    // unnecessary and harmless to omit.
+    if (u.port === "6543" && !u.searchParams.has("pgbouncer")) {
+      u.searchParams.set("pgbouncer", "true");
     }
     return u.toString();
   } catch {
@@ -27,8 +38,10 @@ function ensureConnectionLimit(url: string | undefined): string | undefined {
   }
 }
 
-const runtimeUrl = ensureConnectionLimit(
-  process.env.DIRECT_URL ?? process.env.DATABASE_URL,
+// Prefer DATABASE_URL (Transaction pooler) for runtime queries.
+// DIRECT_URL (Session pooler) is reserved for prisma migrate deploy.
+const runtimeUrl = ensureRuntimeFlags(
+  process.env.DATABASE_URL ?? process.env.DIRECT_URL,
 );
 
 export const prisma =
