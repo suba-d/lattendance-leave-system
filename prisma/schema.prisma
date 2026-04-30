@@ -1,0 +1,198 @@
+// Prisma schema for the attendance + leave system.
+// Designed for a ~10-person office with on-site clock-in only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // DIRECT_URL bypasses Supabase's pgbouncer for migrations (Prisma requires
+  // a direct connection). Set both vars to the same value if not on Supabase.
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  ADMIN
+}
+
+enum ClockKind {
+  IN
+  OUT
+}
+
+enum LeaveStatus {
+  ACTIVE
+  CANCELED
+}
+
+enum LeaveUnit {
+  DAY
+  HALF_DAY
+  HOUR
+}
+
+// Built-in leave categories. Mirrors Taiwan Labor Standards Act categories
+// most relevant to a small office. Custom types can also be added by admins.
+enum LeaveCategory {
+  ANNUAL // 特別休假
+  SICK // 病假
+  PERSONAL // 事假
+  MARRIAGE // 婚假
+  BEREAVEMENT // 喪假
+  MATERNITY // 產假
+  PATERNITY // 陪產(檢)假
+  MENSTRUAL // 生理假
+  OFFICIAL // 公假
+  COMPENSATORY // 補休
+  OTHER // 其他自訂
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  passwordHash   String?
+  lineUserId     String?       @unique
+  role           Role          @default(EMPLOYEE)
+  hireDate       DateTime      @db.Date
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  clockEvents    ClockEvent[]
+  leaveRequests  LeaveRequest[]
+  leaveBalances  LeaveBalance[]
+  lineBindInvites LineBindInvite[]
+
+  @@index([active])
+}
+
+model LeaveType {
+  id                String         @id @default(cuid())
+  // Stable machine key (e.g. "ANNUAL"). Unique.
+  key               String         @unique
+  // Display name in zh-TW.
+  name              String
+  category          LeaveCategory
+  // Whether this type counts against an annual quota that must be tracked.
+  hasQuota          Boolean        @default(false)
+  // Whether quota is auto-calculated by tenure (only meaningful when hasQuota).
+  autoQuota         Boolean        @default(false)
+  // Whether this type is paid (informational; salary calc is out of scope).
+  paid              Boolean        @default(true)
+  active            Boolean        @default(true)
+  sortOrder         Int            @default(0)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  leaveRequests     LeaveRequest[]
+  leaveBalances     LeaveBalance[]
+}
+
+// Per-user, per-year leave balance. Year is the calendar year for simplicity.
+// For ANNUAL leave it is recomputed on demand from User.hireDate.
+model LeaveBalance {
+  id           String     @id @default(cuid())
+  userId       String
+  leaveTypeId  String
+  year         Int
+  // Total entitled hours for the year (1 day = 8 hours).
+  totalHours   Decimal    @db.Decimal(7, 2)
+  // Manual carry-over / adjustment (positive or negative), in hours.
+  adjustHours  Decimal    @default(0) @db.Decimal(7, 2)
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType    LeaveType  @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, leaveTypeId, year])
+  @@index([userId, year])
+}
+
+model LeaveRequest {
+  id              String       @id @default(cuid())
+  userId          String
+  leaveTypeId     String
+  startAt         DateTime
+  endAt           DateTime
+  // Cached duration in hours; recomputed on save.
+  hours           Decimal      @db.Decimal(6, 2)
+  unit            LeaveUnit    @default(DAY)
+  reason          String?
+  status          LeaveStatus  @default(ACTIVE)
+  // Integration sync state. Null means "not yet synced" or disabled.
+  googleEventId   String?
+  lineNotifiedAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  canceledAt      DateTime?
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType       LeaveType    @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@index([userId, startAt])
+  @@index([startAt, endAt])
+  @@index([status])
+}
+
+model ClockEvent {
+  id          String     @id @default(cuid())
+  userId      String
+  kind        ClockKind
+  occurredAt  DateTime   @default(now())
+  // Local-date partition for fast "today's events" lookups, in TZ.
+  workDate    DateTime   @db.Date
+  ipAddress   String?
+  userAgent   String?
+  note        String?
+  createdAt   DateTime   @default(now())
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workDate])
+  @@index([workDate])
+}
+
+// One-shot invitation token used to bind an existing User to a LINE userId.
+// Admins generate these and send the URL to the employee privately.
+model LineBindInvite {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  createdBy String?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Simple key-value store for runtime-mutable settings (e.g., the LINE group
+// ID auto-captured via webhook). Admin can also edit these in the UI.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Append-only audit trail for sensitive admin actions.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+}
