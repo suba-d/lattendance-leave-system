@@ -24,6 +24,9 @@ frontend:
         # a POSIX-style TZ=":UTC" that breaks JS Intl APIs at runtime. The
         # app falls back to Asia/Taipei via src/lib/env.ts when unset.
         - env | grep -E '^(AUTH_SECRET|DATABASE_URL|DIRECT_URL|APP_URL|AUTH_URL|TRUST_PROXY|OFFICE_IP_ALLOWLIST|WORK_START_HOUR|WORK_END_HOUR|SEED_ADMIN_|GOOGLE_|LINE_|NEXT_PUBLIC_LIFF_ID)=' > .env.production
+        # Print just the captured KEY names (never values) so operators can
+        # verify their Amplify env vars actually reached the build env.
+        - echo "==> .env.production captured keys:" && grep -oE '^[^=]+' .env.production | sort | sed 's/^/   - /' || echo "   (none)"
         - pnpm build
   artifacts:
     baseDirectory: .next
