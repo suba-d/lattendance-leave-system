@@ -56,7 +56,19 @@ export default async function LeaveHistoryPage({
                     <span className="muted">~ {formatDateTimeInOfficeTZ(l.endAt)}</span>
                   </td>
                   <td className="py-2">{l.hours.toString()}</td>
-                  <td className="py-2 max-w-xs truncate">{l.reason ?? "—"}</td>
+                  <td className="py-2 max-w-xs">
+                    <div className="truncate">{l.reason ?? "—"}</div>
+                    {l.receiptUrl ? (
+                      <a
+                        href={l.receiptUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        📎 單據
+                      </a>
+                    ) : null}
+                  </td>
                   <td className="py-2">
                     {l.status === LeaveStatus.ACTIVE ? (
                       <span className="badge badge-success">生效中</span>

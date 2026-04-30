@@ -14,40 +14,62 @@ export default async function DashboardPage() {
 
   const today = workDateString();
   const workDate = parseWorkDate(today);
+  const year = new Date().getFullYear();
 
-  const [user, todayEvents, upcomingLeaves, usedAnnualLeave] = await Promise.all([
-    prisma.user.findUnique({ where: { id: session.user.id } }),
-    prisma.clockEvent.findMany({
-      where: { userId: session.user.id, workDate },
-      orderBy: { occurredAt: "asc" },
-    }),
-    prisma.leaveRequest.findMany({
-      where: {
-        userId: session.user.id,
-        status: LeaveStatus.ACTIVE,
-        endAt: { gte: new Date() },
-      },
-      orderBy: { startAt: "asc" },
-      take: 5,
-      include: { leaveType: true },
-    }),
-    prisma.leaveRequest.aggregate({
-      _sum: { hours: true },
-      where: {
-        userId: session.user.id,
-        status: LeaveStatus.ACTIVE,
-        leaveType: { key: "ANNUAL" },
-        startAt: { gte: new Date(new Date().getFullYear(), 0, 1) },
-      },
-    }),
-  ]);
+  const annualLeaveType = await prisma.leaveType.findUnique({
+    where: { key: "ANNUAL" },
+  });
+
+  const [user, todayEvents, upcomingLeaves, usedAnnualLeave, manualBalance] =
+    await Promise.all([
+      prisma.user.findUnique({ where: { id: session.user.id } }),
+      prisma.clockEvent.findMany({
+        where: { userId: session.user.id, workDate },
+        orderBy: { occurredAt: "asc" },
+      }),
+      prisma.leaveRequest.findMany({
+        where: {
+          userId: session.user.id,
+          status: LeaveStatus.ACTIVE,
+          endAt: { gte: new Date() },
+        },
+        orderBy: { startAt: "asc" },
+        take: 5,
+        include: { leaveType: true },
+      }),
+      prisma.leaveRequest.aggregate({
+        _sum: { hours: true },
+        where: {
+          userId: session.user.id,
+          status: LeaveStatus.ACTIVE,
+          leaveType: { key: "ANNUAL" },
+          startAt: { gte: new Date(year, 0, 1) },
+        },
+      }),
+      annualLeaveType
+        ? prisma.leaveBalance.findUnique({
+            where: {
+              userId_leaveTypeId_year: {
+                userId: session.user.id,
+                leaveTypeId: annualLeaveType.id,
+                year,
+              },
+            },
+          })
+        : Promise.resolve(null),
+    ]);
 
   const firstIn = todayEvents.find((e) => e.kind === "IN");
   const lastOut = [...todayEvents].reverse().find((e) => e.kind === "OUT");
 
-  const annualEntitlement = user
-    ? annualLeaveHoursAsOf(user.hireDate, new Date())
-    : 0;
+  // Prefer the explicit LeaveBalance row (set by legacy import or by admin
+  // override) over the auto-tenure calculation. Fallback keeps things working
+  // for fresh employees who only have a hireDate.
+  const annualEntitlement = manualBalance
+    ? Number(manualBalance.totalHours) + Number(manualBalance.adjustHours)
+    : user
+      ? annualLeaveHoursAsOf(user.hireDate, new Date())
+      : 0;
   const usedHours = Number(usedAnnualLeave._sum.hours ?? 0);
   const remaining = Math.max(0, annualEntitlement - usedHours);
 
@@ -87,7 +109,9 @@ export default async function DashboardPage() {
             年度配額 {(annualEntitlement / 8).toFixed(0)} 天 / 已使用 {(usedHours / 8).toFixed(1)} 天
           </p>
           <p className="text-xs muted mt-3">
-            依勞基法 §38 按到職日 {user ? user.hireDate.toISOString().slice(0, 10) : "—"} 自動計算
+            {manualBalance
+              ? "管理者設定 / 舊系統匯入"
+              : `依勞基法 §38 按到職日 ${user ? user.hireDate.toISOString().slice(0, 10) : "—"} 自動計算`}
           </p>
         </div>
       </div>
