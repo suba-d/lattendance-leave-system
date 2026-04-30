@@ -1,12 +1,27 @@
 import { PrismaClient, LeaveCategory } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-// Use DIRECT_URL (session pooler / direct connection) for one-shot scripts.
-// The default DATABASE_URL points at Supabase's transaction pooler, where
-// prepared-statement caching collides with pgbouncer when running batches.
+// Use the Transaction pooler (DATABASE_URL) with pgbouncer + connection_limit
+// flags injected; the Session pooler (DIRECT_URL) only has 15 client slots
+// which compete with the runtime Lambda warm pool and lock up under repeat
+// deploys. Schema migrations still use DIRECT_URL via schema.prisma.
+function flagged(url: string | undefined): string | undefined {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("connection_limit"))
+      u.searchParams.set("connection_limit", "1");
+    if (u.port === "6543" && !u.searchParams.has("pgbouncer"))
+      u.searchParams.set("pgbouncer", "true");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 const prisma = new PrismaClient({
   datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
+    db: { url: flagged(process.env.DATABASE_URL ?? process.env.DIRECT_URL) },
   },
 });
 

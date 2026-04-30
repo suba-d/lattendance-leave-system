@@ -28,13 +28,26 @@ import { join } from "node:path";
 import { PrismaClient, LeaveStatus, LeaveUnit, Prisma, Role } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 
-// Use DIRECT_URL (session pooler / direct connection) for one-shot scripts.
-// The default DATABASE_URL points at Supabase's transaction pooler, where
-// prepared-statement caching collides with pgbouncer when running batches
-// (causes "prepared statement \"s0\" already exists" 42P05 errors).
+// Use the Transaction pooler (DATABASE_URL) with pgbouncer + connection_limit
+// flags so we don't compete with the runtime Lambda warm pool for Session
+// pooler slots (only 15 on Supabase free tier).
+function flagged(url: string | undefined): string | undefined {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("connection_limit"))
+      u.searchParams.set("connection_limit", "1");
+    if (u.port === "6543" && !u.searchParams.has("pgbouncer"))
+      u.searchParams.set("pgbouncer", "true");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 const prisma = new PrismaClient({
   datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
+    db: { url: flagged(process.env.DATABASE_URL ?? process.env.DIRECT_URL) },
   },
 });
 
