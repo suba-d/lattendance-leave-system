@@ -47,11 +47,20 @@ async function main() {
 
   if (adminEmail && adminPassword) {
     const passwordHash = await bcrypt.hash(adminPassword, 10);
+    const normalizedEmail = adminEmail.toLowerCase();
     const admin = await prisma.user.upsert({
-      where: { email: adminEmail },
-      update: { role: "ADMIN", active: true, name: adminName },
+      where: { email: normalizedEmail },
+      // Always reset name + role + password from the env on every deploy so
+      // operators can recover the recovery account by re-deploying with a
+      // new SEED_ADMIN_PASSWORD.
+      update: {
+        role: "ADMIN",
+        active: true,
+        name: adminName,
+        passwordHash,
+      },
       create: {
-        email: adminEmail,
+        email: normalizedEmail,
         name: adminName,
         passwordHash,
         role: "ADMIN",
