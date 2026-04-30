@@ -1,7 +1,16 @@
 // Centralized environment access. Keep all process.env reads here so the
 // rest of the app can import typed helpers.
 
-export const TZ = process.env.TZ || "Asia/Taipei";
+// Linux POSIX environments may set TZ with a leading ":" prefix
+// (e.g. ":UTC"), which JavaScript Intl APIs reject as invalid. Strip the
+// prefix and fall back to the office default if the value is empty.
+function sanitizeTz(raw: string | undefined): string {
+  if (!raw) return "Asia/Taipei";
+  const cleaned = raw.replace(/^:/, "").trim();
+  return cleaned || "Asia/Taipei";
+}
+
+export const TZ = sanitizeTz(process.env.TZ);
 
 export const WORK_START_HOUR = Number(process.env.WORK_START_HOUR ?? 9);
 export const WORK_END_HOUR = Number(process.env.WORK_END_HOUR ?? 18);
