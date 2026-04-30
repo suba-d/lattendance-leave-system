@@ -50,16 +50,15 @@ CREATE SCHEMA IF NOT EXISTS lattendance;
 
 ### 3. 設定環境變數
 
-在 Amplify → App settings → Environment variables 填入：
+到 Amplify Console → 你的 app → **Hosting → Environment variables**（**不是** Secrets panel — Secrets 走 SSM 在這裡會壞）：
 
 | 變數 | 值 / 來源 | 必填 |
 |---|---|---|
-| `DATABASE_URL` | Supabase → Settings → Database → **Connection pooling URI**，後面接 `&schema=lattendance` | ✅ |
-| `DIRECT_URL` | 同上頁的 **Direct connection URI**，後面接 `&schema=lattendance` | ✅ |
-| `AUTH_SECRET` | `openssl rand -base64 32` | ✅ |
+| `DATABASE_URL` | Supabase → Connect popup → **Session pooler** URI，結尾加 `?schema=lattendance` | ✅ |
+| `DIRECT_URL` | 同上 | ✅ |
+| `AUTH_SECRET` | 本機跑 `openssl rand -base64 32` 拿到的**輸出字串**（不是這條指令本身） | ✅ |
 | `OFFICE_IP_ALLOWLIST` | 辦公室固定對外 IP，例：`203.0.113.10` | ✅ 正式上線必填 |
 | `APP_URL` | 部署後的對外網址，例：`https://attendance.example.com` | ✅ 啟用 LINE 後必填 |
-| `TZ` | `Asia/Taipei` | 建議 |
 | `SEED_ADMIN_EMAIL` | 第一個管理員 Email（救援登入用） | ✅ |
 | `SEED_ADMIN_PASSWORD` | 第一個管理員密碼 | ✅ |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API token | ✅ 啟用 LINE 必填 |
@@ -71,11 +70,36 @@ CREATE SCHEMA IF NOT EXISTS lattendance;
 
 > 完整變數說明見 `.env.example`。
 
+> ⚠️ **不要** 設 `TZ` 環境變數。Amplify build 環境會把 `TZ=:UTC` 預設帶進來，那個冒號前綴 JS 看不懂會炸 dashboard。app 內已 hardcode default `Asia/Taipei`。
+
+#### Supabase 連線字串為什麼用 Session pooler
+
+我們踩過所有可能的雷。經驗整理：
+
+| 選項 | 結果 |
+|---|---|
+| `db.<project>.supabase.co:5432`（Direct connection） | ❌ IPv6-only，Amplify 走 IPv4 → P1001 連不到 |
+| `aws-X-<region>.pooler.supabase.com:6543`（Transaction pooler） | ❌ Prisma + pgbouncer 跨連線撞 prepared statement → 42P05 |
+| `aws-X-<region>.pooler.supabase.com:5432`（**Session pooler**） | ✅ 穩定運作 |
+
+10 人公司負載低，session pooler 完全沒副作用；勿用 transaction pooler。
+
 ### 4. 部署後檢查
 
-打開 Amplify 提供的 URL → 應看到登入頁。用 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` 登入。
+1. 打開 Amplify 提供的 URL → 看到登入頁
+2. 試 `https://<你的網址>/api/healthz` → 看到 `db_ping_ms` 有值、所有 `_count` 有數字、無 `_error` 欄位
+3. 到 `/login?mode=email` 用 `SEED_ADMIN_*` 登入 → 進 dashboard
+4. 進管理者後台 → 員工 → 新增其他同事的帳號（或產生 LINE 綁定連結）
 
-進管理者後台 → 員工 → 新增其他同事的帳號。
+#### 出問題的 debug 步驟
+
+| 症狀 | 看哪 |
+|---|---|
+| 登入點下去出現 `MissingSecret` | `AUTH_SECRET` 沒設 / 值不對 / 在錯的 env panel（要用 Environment variables 不要用 Secrets） |
+| Dashboard 500 | 訪問 `/api/healthz` 看 JSON output；裡面會列 DB 連線 + 所有 query 的成功/錯誤 |
+| `Application error: client-side exception` | 通常是 server-side error 隱藏訊息，先看 `/api/healthz` |
+| Build 卡 `prisma migrate` | 99% 是 connection string 格式錯。詳見 [Supabase 連線字串為什麼用 Session pooler](#supabase-連線字串為什麼用-session-pooler) 那節 |
+| Env var 在 console 設了但 runtime 拿不到 | 已知 Amplify SSR bug；本專案 build 階段把 env 寫進 `.env.production` 解這個。如果新加 env var，記得到 `amplify.yml` 的 grep 白名單把它加進去 |
 
 ## 日常開發流程
 
@@ -189,6 +213,8 @@ src/
       admin/         # 管理者後台
     login/
     api/auth/        # Auth.js handlers
+    api/healthz/     # 部署診斷 (env+DB+queries 自查)
+    api/line/        # LINE webhook + bind callback
   components/
   lib/               # auth / db / IP allowlist / Google Calendar / LINE / 勞基法
   server/actions/    # Server Actions
@@ -197,7 +223,10 @@ prisma/
   schema.prisma      # multi-database via DATABASE_URL + DIRECT_URL
   migrations/        # 由 AI 在開發時用 `prisma migrate dev` 產出，提交進 repo
   seed.ts            # 假別 + admin
-amplify.yml          # Amplify build + migrate + seed
+scripts/
+  setup-line.ts      # Rich Menu 一次性註冊（手動跑）
+  import-legacy.ts   # 舊系統 dump 匯入（idempotent，amplify build 會跑）
+amplify.yml          # Amplify build + migrate + seed + import + .env.production
 .github/workflows/   # CI
 ```
 
