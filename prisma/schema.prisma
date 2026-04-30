@@ -6,8 +6,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // DIRECT_URL bypasses Supabase's pgbouncer for migrations (Prisma requires
+  // a direct connection). Set both vars to the same value if not on Supabase.
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {

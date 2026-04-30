@@ -1,0 +1,24 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - corepack enable
+        - corepack prepare pnpm@10.33.0 --activate
+        - pnpm install --frozen-lockfile
+    build:
+      commands:
+        # Apply pending migrations to Supabase (uses DIRECT_URL).
+        - pnpm exec prisma migrate deploy
+        # Seed leave types + admin user (idempotent upserts).
+        - pnpm exec tsx prisma/seed.ts
+        - pnpm build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*
+      - ~/.local/share/pnpm/store/v3/**/*
