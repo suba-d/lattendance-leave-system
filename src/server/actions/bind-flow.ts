@@ -13,7 +13,6 @@ const STATE_COOKIE_MAX_AGE = 10 * 60; // 10 minutes
 
 function origin(): string {
   if (APP_URL) return APP_URL.replace(/\/$/, "");
-  // Best-effort fallback when APP_URL not set.
   return "";
 }
 
@@ -26,17 +25,29 @@ async function deriveOriginFromHeaders(): Promise<string> {
 
 export async function startBindAction(token: string): Promise<void> {
   if (!lineLoginEnabled) {
-    redirect("/bind/invalid");
+    redirect("/bind/invalid?reason=line_login_disabled");
   }
 
-  const invite = await prisma.lineBindInvite.findUnique({ where: { token } });
-  if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
-    redirect("/bind/invalid");
+  const invite = await prisma.lineBindInvite.findUnique({
+    where: { token },
+    include: { user: true },
+  });
+  if (!invite) {
+    redirect("/bind/invalid?reason=not_found");
+  }
+  if (invite.usedAt) {
+    redirect("/bind/invalid?reason=used");
+  }
+  if (invite.expiresAt < new Date()) {
+    redirect("/bind/invalid?reason=expired");
+  }
+  if (!invite.user.active) {
+    redirect("/bind/invalid?reason=user_inactive");
   }
 
   const baseUrl = origin() || (await deriveOriginFromHeaders());
   if (!baseUrl) {
-    throw new Error("Cannot determine app origin; set APP_URL env var");
+    redirect("/bind/invalid?reason=no_origin");
   }
 
   const nonce = randomBytes(16).toString("base64url");
