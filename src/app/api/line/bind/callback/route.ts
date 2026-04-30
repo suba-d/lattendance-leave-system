@@ -15,6 +15,10 @@ function originOf(req: NextRequest): string {
   return host ? `${proto}://${host}` : "";
 }
 
+function fail(req: NextRequest, reason: string): NextResponse {
+  return NextResponse.redirect(new URL(`/bind/invalid?reason=${reason}`, req.url));
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
@@ -22,7 +26,7 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   const error = url.searchParams.get("error");
 
   if (error || !code || !state) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
+    return fail(req, "oauth_error");
   }
 
   const cookieStore = await cookies();
@@ -30,37 +34,34 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   cookieStore.delete(STATE_COOKIE);
 
   if (!cookieState || cookieState !== state) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
+    return fail(req, "state_mismatch");
   }
 
   const verified = verifyBindState(state, process.env.AUTH_SECRET || "");
   if (!verified) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
+    return fail(req, "state_mismatch");
   }
 
   const invite = await prisma.lineBindInvite.findUnique({
     where: { token: verified.token },
   });
-  if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
-  }
+  if (!invite) return fail(req, "not_found");
+  if (invite.usedAt) return fail(req, "used");
+  if (invite.expiresAt < new Date()) return fail(req, "expired");
 
   const tokens = await exchangeLineCode({
     code,
     redirectUri: `${originOf(req)}/api/line/bind/callback`,
   });
-  if (!tokens) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
-  }
+  if (!tokens) return fail(req, "token_exchange_failed");
+
   const lineUserId = await verifyLineIdToken(tokens.idToken);
-  if (!lineUserId) {
-    return NextResponse.redirect(new URL("/bind/invalid", req.url));
-  }
+  if (!lineUserId) return fail(req, "id_token_invalid");
 
   // Reject if this LINE userId is already bound to a different employee.
   const existing = await prisma.user.findUnique({ where: { lineUserId } });
   if (existing && existing.id !== invite.userId) {
-    return NextResponse.redirect(new URL("/bind/invalid?reason=conflict", req.url));
+    return fail(req, "conflict");
   }
 
   await prisma.$transaction([
@@ -81,6 +82,5 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
     redirectTo: "/dashboard",
   });
 
-  // signIn throws a redirect, but be safe.
   return NextResponse.redirect(new URL("/dashboard", req.url));
 }

@@ -21,6 +21,13 @@ export async function GET() {
     DIRECT_URL_schema: schemaFromUrl(process.env.DIRECT_URL),
     APP_URL: process.env.APP_URL ?? null,
     TZ_raw: process.env.TZ ?? null,
+    // LINE integration env state — booleans only, no secret values.
+    has_LINE_LOGIN_CHANNEL_ID: !!process.env.LINE_LOGIN_CHANNEL_ID,
+    has_LINE_LOGIN_CHANNEL_SECRET: !!process.env.LINE_LOGIN_CHANNEL_SECRET,
+    has_LINE_CHANNEL_ACCESS_TOKEN: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    has_LINE_CHANNEL_SECRET: !!process.env.LINE_CHANNEL_SECRET,
+    has_LINE_CHANNEL_ID: !!process.env.LINE_CHANNEL_ID,
+    has_NEXT_PUBLIC_LIFF_ID: !!process.env.NEXT_PUBLIC_LIFF_ID,
   };
 
   const checks: Record<string, unknown> = {};
