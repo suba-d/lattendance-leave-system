@@ -10,9 +10,14 @@ export const authConfig = {
     authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
       const path = request.nextUrl.pathname;
-      const isAuthRoute = path === "/login";
-      // Public assets/API exclusions are handled in middleware matcher.
-      if (isAuthRoute) {
+      const isLoginRoute = path === "/login";
+      const isPublic =
+        path.startsWith("/bind") ||
+        path.startsWith("/liff") ||
+        path.startsWith("/api/line");
+
+      if (isPublic) return true;
+      if (isLoginRoute) {
         if (isLoggedIn) {
           return Response.redirect(new URL("/dashboard", request.nextUrl));
         }

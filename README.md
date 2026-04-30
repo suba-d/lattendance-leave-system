@@ -9,13 +9,15 @@
 
 ## 功能
 
-- 員工 Email + 密碼登入
-- 上下班打卡，限制辦公室 IP（CIDR / IPv4-mapped IPv6）
+- **LINE 登入**為主，員工不用記密碼（Email/密碼藏在 `?mode=email` 作為救援用）
+- **LIFF**：員工從 LINE Rich Menu 直接打開系統，免跳出 LINE
+- **Rich Menu**：聊天框下方常駐 6 顆按鈕（打卡 / 請假 / 餘額 / 紀錄 / 說明）
+- 上下班打卡，限制辦公室 IP（手機需連辦公室 WiFi）
 - 線上申請請假，**送出即生效**（無需審核）、可取消
 - 自動同步請假到 **Google Calendar**
-- 自動推播請假到 **LINE 群組**
+- 自動推播請假到 **LINE 群組**：`david 5/2 全天 病假` 格式（含假別、不揭露事由）
 - 特休依勞基法 §38 按到職日自動計算
-- 管理者後台：員工 CRUD、請假紀錄總表、每日打卡彙整
+- 管理者後台：員工 CRUD、LINE 綁定連結、請假紀錄總表、每日打卡彙整
 
 ## 技術棧
 
@@ -56,11 +58,16 @@ CREATE SCHEMA IF NOT EXISTS lattendance;
 | `DIRECT_URL` | 同上頁的 **Direct connection URI**，後面接 `&schema=lattendance` | ✅ |
 | `AUTH_SECRET` | `openssl rand -base64 32` | ✅ |
 | `OFFICE_IP_ALLOWLIST` | 辦公室固定對外 IP，例：`203.0.113.10` | ✅ 正式上線必填 |
+| `APP_URL` | 部署後的對外網址，例：`https://attendance.example.com` | ✅ 啟用 LINE 後必填 |
 | `TZ` | `Asia/Taipei` | 建議 |
-| `SEED_ADMIN_EMAIL` | 第一個管理員 Email | ✅ |
-| `SEED_ADMIN_PASSWORD` | 第一個管理員密碼（首次登入後請員工自己改） | ✅ |
+| `SEED_ADMIN_EMAIL` | 第一個管理員 Email（救援登入用） | ✅ |
+| `SEED_ADMIN_PASSWORD` | 第一個管理員密碼 | ✅ |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API token | ✅ 啟用 LINE 必填 |
+| `LINE_CHANNEL_SECRET` | Messaging API secret（webhook 驗章用） | ✅ 啟用 LINE 必填 |
+| `LINE_LOGIN_CHANNEL_ID` | LINE Login Channel ID | ✅ 啟用 LINE 必填 |
+| `LINE_LOGIN_CHANNEL_SECRET` | LINE Login Channel secret | ✅ 啟用 LINE 必填 |
+| `NEXT_PUBLIC_LIFF_ID` | LIFF App ID（曝光到瀏覽器） | ✅ 啟用 LIFF 必填 |
 | `GOOGLE_*` | 見下方「Google Calendar 同步」 | optional |
-| `LINE_*` | 見下方「LINE 群組通知」 | optional |
 
 > 完整變數說明見 `.env.example`。
 
@@ -85,21 +92,90 @@ AI 寫 code → push branch → 開 PR → GitHub Actions CI 跑 typecheck + bui
 
 不需要本機跑任何指令。
 
-## Google Calendar 同步（optional）
+## LINE 整合（一次設定）
 
-LINE Notify 已停用，本系統用 LINE Messaging API。設定步驟：
+整合 4 個元件：**Messaging API**（推播 + webhook）、**LINE Login**（OAuth）、**LIFF**（in-app webview）、**Rich Menu**（聊天選單）。
+
+### 1. 建 Provider + Channel
+
+LINE Developers Console → 建一個 Provider → 在底下建一個 **Messaging API Channel**。
+
+在 Channel 設定頁同時啟用：
+- ✅ Messaging API（必）
+- ✅ **LINE Login**（必）— 同一個 Channel 啟用兩個 product，userId 一致
+
+### 2. 蒐集 keys 填到 Amplify env vars
+
+| Channel 設定頁位置 | 環境變數 |
+|---|---|
+| Basic settings → Channel ID | `LINE_LOGIN_CHANNEL_ID` |
+| Basic settings → Channel secret | `LINE_LOGIN_CHANNEL_SECRET` 與 `LINE_CHANNEL_SECRET` |
+| Messaging API → Channel access token (long-lived) | `LINE_CHANNEL_ACCESS_TOKEN` |
+
+### 3. Callback URL 設定
+
+在 LINE Login 設定頁的 Callback URL 加入：
+```
+https://<你的 amplify 網域>/api/auth/callback/line
+https://<你的 amplify 網域>/api/line/bind/callback
+```
+
+### 4. Webhook URL（推播 + 群組綁定）
+
+Messaging API → Webhook URL 設成：
+```
+https://<你的 amplify 網域>/api/line/webhook
+```
+按「Verify」應該回 200 OK，再打開「Use webhook」開關。
+
+### 5. 群組通知綁定
+
+1. 把 bot 加進公司 LINE 群組
+2. 任何人在群組打 `/bind`
+3. Bot 會回「✅ 已連結到此群組」並把 groupId 寫入 DB
+4. 之後請假申請會自動推到此群組
+
+> 也可以直接把 `LINE_TARGET_ID` 環境變數寫死，繞過動態綁定。
+
+### 6. LIFF App
+
+LINE Developers → 你的 Channel → LIFF tab → Add：
+- Size: **Tall**
+- Endpoint URL: `https://<你的 amplify 網域>/liff`
+- Scopes: `openid` `profile`
+- 開啟「Bot link feature」可選
+
+把產生的 LIFF ID 填進 Amplify env var：`NEXT_PUBLIC_LIFF_ID`。
+
+### 7. Rich Menu（員工聊天框下方常駐選單）
+
+部署完成後，本機跑一次：
+
+```bash
+LINE_CHANNEL_ACCESS_TOKEN=xxx APP_URL=https://... NEXT_PUBLIC_LIFF_ID=xxx \
+  pnpm tsx scripts/setup-line.ts
+```
+
+腳本會：自動產生選單圖（綠底 6 格）→ 上傳到 LINE → 設為所有員工的預設選單。
+
+> 想客製化圖：放 `2500x843` PNG 到 `.cache/rich-menu.png`，腳本會優先用它。
+
+### 8. 員工綁定 LINE
+
+1. 管理者登入 → 管理 → 員工 → 該員工列「產生綁定連結」
+2. 把連結私訊給員工（連結 24 小時內、一次性）
+3. 員工點連結 → 用 LINE 授權 → 自動登入並綁定
+
+之後該員工：
+- 在電腦：到登入頁點「用 LINE 登入」
+- 在手機：直接從 LINE Rich Menu 點任一按鈕進系統
+
+## Google Calendar 同步（optional）
 
 1. 到 Google Cloud Console 建 Service Account，下載 JSON key
 2. 啟用 Google Calendar API
 3. 建一個共用日曆（例：「公司請假」），把 Service Account email 加為「可變更活動」共用對象
 4. 把日曆 ID、Service Account email、private key 寫進 Amplify env vars
-
-## LINE 群組通知（optional）
-
-1. LINE Developers Console → 建立 Messaging API Channel
-2. 取得 Channel access token → `LINE_CHANNEL_ACCESS_TOKEN`
-3. 把 Bot 邀請進公司群組
-4. 從 webhook event 抓 `source.groupId` → `LINE_TARGET_ID`
 
 ## 結構
 
@@ -130,6 +206,5 @@ amplify.yml          # Amplify build + migrate + seed
 - [ ] 舊系統 DB 匯入（待提供 dump）
 - [ ] 補休累積邏輯
 - [ ] 月份 / 年度報表 export
-- [ ] Google Workspace SSO
-- [ ] Cron jobs：年初重設特休、未打卡提醒
+- [ ] Cron jobs：年初重設特休
 - [ ] 國定假日匯入

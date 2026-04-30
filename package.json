@@ -13,6 +13,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "line:setup-richmenu": "tsx scripts/setup-line.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

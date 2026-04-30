@@ -6,7 +6,7 @@ import { ClockCard } from "@/components/clock-card";
 import { formatDateTimeInOfficeTZ, parseWorkDate, workDateString } from "@/lib/date";
 import { annualLeaveHoursAsOf } from "@/lib/leave-balance";
 import { ipAllowlistEnabled } from "@/lib/ip-allowlist";
-import { googleCalendarEnabled, lineEnabled } from "@/lib/env";
+import { googleCalendarEnabled, lineMessagingEnabled, lineLoginEnabled } from "@/lib/env";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -131,7 +131,15 @@ export default async function DashboardPage() {
           </li>
           <li>
             LINE 群組通知：
-            {lineEnabled ? (
+            {lineMessagingEnabled ? (
+              <span className="badge badge-success ml-2">已啟用</span>
+            ) : (
+              <span className="badge badge-muted ml-2">未設定</span>
+            )}
+          </li>
+          <li>
+            LINE 登入：
+            {lineLoginEnabled ? (
               <span className="badge badge-success ml-2">已啟用</span>
             ) : (
               <span className="badge badge-muted ml-2">未設定</span>

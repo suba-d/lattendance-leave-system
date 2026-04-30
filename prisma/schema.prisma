@@ -54,7 +54,8 @@ model User {
   id             String        @id @default(cuid())
   email          String        @unique
   name           String
-  passwordHash   String
+  passwordHash   String?
+  lineUserId     String?       @unique
   role           Role          @default(EMPLOYEE)
   hireDate       DateTime      @db.Date
   active         Boolean       @default(true)
@@ -64,6 +65,7 @@ model User {
   clockEvents    ClockEvent[]
   leaveRequests  LeaveRequest[]
   leaveBalances  LeaveBalance[]
+  lineBindInvites LineBindInvite[]
 
   @@index([active])
 }
@@ -154,6 +156,31 @@ model ClockEvent {
 
   @@index([userId, workDate])
   @@index([workDate])
+}
+
+// One-shot invitation token used to bind an existing User to a LINE userId.
+// Admins generate these and send the URL to the employee privately.
+model LineBindInvite {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  createdBy String?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Simple key-value store for runtime-mutable settings (e.g., the LINE group
+// ID auto-captured via webhook). Admin can also edit these in the UI.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 // Append-only audit trail for sensitive admin actions.

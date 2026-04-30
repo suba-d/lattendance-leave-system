@@ -5,22 +5,45 @@ import {
   deactivateUserAction,
   upsertUserAction,
 } from "@/server/actions/users";
+import { createBindInviteAction, unbindLineAction } from "@/server/actions/bind";
+import { APP_URL } from "@/lib/env";
+import { headers } from "next/headers";
 
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; invite?: string }>;
 }) {
   const sp = await searchParams;
   const users = await prisma.user.findMany({
     orderBy: [{ active: "desc" }, { createdAt: "asc" }],
   });
 
+  // Resolve a base URL we can show in the invite link banner.
+  let baseUrl = APP_URL.replace(/\/$/, "");
+  if (!baseUrl) {
+    const h = await headers();
+    const proto = h.get("x-forwarded-proto") || "https";
+    const host = h.get("x-forwarded-host") || h.get("host") || "";
+    baseUrl = host ? `${proto}://${host}` : "";
+  }
+  const inviteUrl = sp?.invite ? `${baseUrl}/bind/${sp.invite}` : null;
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">員工管理</h1>
       {sp?.saved ? <p className="text-sm text-green-600">✓ 已儲存</p> : null}
       {sp?.error ? <p className="text-sm text-red-600">{sp.error}</p> : null}
+
+      {inviteUrl ? (
+        <div className="card border-blue-300 bg-blue-50">
+          <p className="text-sm font-medium mb-1">綁定連結已產生（24 小時內有效）</p>
+          <p className="text-sm muted mb-2">把這個連結私訊給該員工：</p>
+          <code className="block break-all text-xs bg-white p-2 rounded border border-blue-200">
+            {inviteUrl}
+          </code>
+        </div>
+      ) : null}
 
       <div className="card">
         <h2 className="font-semibold mb-3">新增員工</h2>
@@ -64,6 +87,7 @@ export default async function AdminUsersPage({
               <th className="py-2">角色</th>
               <th className="py-2">到職日</th>
               <th className="py-2">狀態</th>
+              <th className="py-2">LINE</th>
               <th className="py-2"></th>
             </tr>
           </thead>
@@ -81,6 +105,20 @@ export default async function AdminUsersPage({
                     <span className="badge badge-success">啟用</span>
                   ) : (
                     <span className="badge badge-muted">停用</span>
+                  )}
+                </td>
+                <td className="py-2">
+                  {u.lineUserId ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="badge badge-success">已綁定</span>
+                      <form action={unbindLineAction.bind(null, u.id)}>
+                        <button className="btn text-xs" type="submit">解除綁定</button>
+                      </form>
+                    </div>
+                  ) : (
+                    <form action={createBindInviteAction.bind(null, u.id)}>
+                      <button className="btn text-xs" type="submit">產生綁定連結</button>
+                    </form>
                   )}
                 </td>
                 <td className="py-2">

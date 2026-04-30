@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { createLeaveEvent, deleteLeaveEvent } from "@/lib/google-calendar";
 import { pushLineText } from "@/lib/line";
-import { formatDateTimeInOfficeTZ } from "@/lib/date";
+import { formatGroupLeaveNotice } from "@/lib/leave-format";
 
 const submitSchema = z.object({
   leaveTypeId: z.string().min(1),
@@ -161,13 +161,15 @@ async function syncLeaveIntegrations(leaveId: string): Promise<void> {
   }
 
   try {
-    const lines = [
-      `📌 ${lr.user.name} 已申請 ${lr.leaveType.name}`,
-      `🕐 ${formatDateTimeInOfficeTZ(lr.startAt)} ~ ${formatDateTimeInOfficeTZ(lr.endAt)}`,
-      `⏱ ${lr.hours.toString()} 小時`,
-      lr.reason ? `📝 ${lr.reason}` : null,
-    ].filter(Boolean) as string[];
-    const sent = await pushLineText(lines.join("\n"));
+    // Privacy-aware: name + date(s) + (time range) + leave type. No reason.
+    const message = formatGroupLeaveNotice({
+      userName: lr.user.name,
+      leaveTypeName: lr.leaveType.name,
+      startAt: lr.startAt,
+      endAt: lr.endAt,
+      unit: lr.unit,
+    });
+    const sent = await pushLineText(message);
     if (sent) {
       await prisma.leaveRequest.update({
         where: { id: lr.id },
