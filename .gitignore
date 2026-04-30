@@ -40,6 +40,10 @@ next-env.d.ts
 # prisma
 /prisma/migrations/dev.db*
 
+# legacy import dumps — never re-commit (contains passwords / receipts)
+/leave_system_dump.sql
+*.legacy.sql
+
 # IDE
 .vscode/
 .idea/
