@@ -12,6 +12,9 @@ frontend:
         - pnpm exec prisma migrate deploy
         # Seed leave types + admin user (idempotent upserts).
         - pnpm exec tsx prisma/seed.ts
+        # Idempotent legacy import — no-ops if leave_system_dump.sql is absent
+        # or all rows are already imported (matched by legacyId).
+        - pnpm exec tsx scripts/import-legacy.ts
         - pnpm build
   artifacts:
     baseDirectory: .next

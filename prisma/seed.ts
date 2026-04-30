@@ -12,6 +12,7 @@ const LEAVE_TYPES = [
   { key: "MATERNITY", name: "產假", category: LeaveCategory.MATERNITY, hasQuota: false, autoQuota: false, paid: true, sortOrder: 60 },
   { key: "PATERNITY", name: "陪產(檢)假", category: LeaveCategory.PATERNITY, hasQuota: false, autoQuota: false, paid: true, sortOrder: 70 },
   { key: "MENSTRUAL", name: "生理假", category: LeaveCategory.MENSTRUAL, hasQuota: false, autoQuota: false, paid: true, sortOrder: 80 },
+  { key: "FAMILY_CARE", name: "家庭照顧假", category: LeaveCategory.FAMILY_CARE, hasQuota: true, autoQuota: false, paid: true, sortOrder: 85 },
   { key: "OFFICIAL", name: "公假", category: LeaveCategory.OFFICIAL, hasQuota: false, autoQuota: false, paid: true, sortOrder: 90 },
   { key: "COMPENSATORY", name: "補休", category: LeaveCategory.COMPENSATORY, hasQuota: true, autoQuota: false, paid: true, sortOrder: 100 },
 ];
