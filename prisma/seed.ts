@@ -1,7 +1,14 @@
 import { PrismaClient, LeaveCategory } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+// Use DIRECT_URL (session pooler / direct connection) for one-shot scripts.
+// The default DATABASE_URL points at Supabase's transaction pooler, where
+// prepared-statement caching collides with pgbouncer when running batches.
+const prisma = new PrismaClient({
+  datasources: {
+    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
+  },
+});
 
 const LEAVE_TYPES = [
   { key: "ANNUAL", name: "特別休假", category: LeaveCategory.ANNUAL, hasQuota: true, autoQuota: true, paid: true, sortOrder: 10 },
