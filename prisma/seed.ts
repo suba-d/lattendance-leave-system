@@ -25,18 +25,16 @@ const prisma = new PrismaClient({
   },
 });
 
+// The six leave types actually present in the legacy system. Other Taiwan
+// labor-law categories (婚假 / 產假 / 陪產 / 公假 / 補休) are deliberately
+// NOT seeded — operator can add them later if business policy needs them.
 const LEAVE_TYPES = [
   { key: "ANNUAL", name: "特別休假", category: LeaveCategory.ANNUAL, hasQuota: true, autoQuota: true, paid: true, sortOrder: 10 },
   { key: "SICK", name: "病假", category: LeaveCategory.SICK, hasQuota: true, autoQuota: false, paid: true, sortOrder: 20 },
   { key: "PERSONAL", name: "事假", category: LeaveCategory.PERSONAL, hasQuota: true, autoQuota: false, paid: false, sortOrder: 30 },
-  { key: "MARRIAGE", name: "婚假", category: LeaveCategory.MARRIAGE, hasQuota: false, autoQuota: false, paid: true, sortOrder: 40 },
   { key: "BEREAVEMENT", name: "喪假", category: LeaveCategory.BEREAVEMENT, hasQuota: false, autoQuota: false, paid: true, sortOrder: 50 },
-  { key: "MATERNITY", name: "產假", category: LeaveCategory.MATERNITY, hasQuota: false, autoQuota: false, paid: true, sortOrder: 60 },
-  { key: "PATERNITY", name: "陪產(檢)假", category: LeaveCategory.PATERNITY, hasQuota: false, autoQuota: false, paid: true, sortOrder: 70 },
   { key: "MENSTRUAL", name: "生理假", category: LeaveCategory.MENSTRUAL, hasQuota: false, autoQuota: false, paid: true, sortOrder: 80 },
   { key: "FAMILY_CARE", name: "家庭照顧假", category: LeaveCategory.FAMILY_CARE, hasQuota: true, autoQuota: false, paid: true, sortOrder: 85 },
-  { key: "OFFICIAL", name: "公假", category: LeaveCategory.OFFICIAL, hasQuota: false, autoQuota: false, paid: true, sortOrder: 90 },
-  { key: "COMPENSATORY", name: "補休", category: LeaveCategory.COMPENSATORY, hasQuota: true, autoQuota: false, paid: true, sortOrder: 100 },
 ];
 
 async function main() {

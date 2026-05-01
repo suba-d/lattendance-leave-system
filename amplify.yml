@@ -17,6 +17,11 @@ frontend:
         # we delete it (post-import-verified), this becomes a no-op
         # without paying tsx + Prisma cold-start time.
         - if [ -f leave_system_dump.sql ]; then pnpm exec tsx scripts/import-legacy.ts; fi
+        # Idempotent post-import remediation: corrects the inflated
+        # balances bug from earlier and removes the leave types that
+        # weren't in the legacy system. Safe to leave running on every
+        # deploy — both fixes detect already-applied state and skip.
+        - pnpm exec tsx scripts/fix-legacy-data.ts
         # Amplify Hosting (SSR) doesn't reliably forward console-defined env
         # vars to the runtime Lambda. Write them into .env.production at
         # build time; Next.js automatically loads this file at runtime.
