@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     where: { key: "ANNUAL" },
   });
 
-  const [user, todayEvents, upcomingLeaves, usedAnnualLeave, manualBalance] =
+  const [user, todayEvents, upcomingLeaves, usedAnnualLeave, manualBalance, ipEnabled] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: session.user.id } }),
       prisma.clockEvent.findMany({
@@ -57,6 +57,7 @@ export default async function DashboardPage() {
             },
           })
         : Promise.resolve(null),
+      ipAllowlistEnabled(),
     ]);
 
   const firstIn = todayEvents.find((e) => e.kind === "IN");
@@ -80,11 +81,18 @@ export default async function DashboardPage() {
         <p className="muted text-sm">{today}</p>
       </div>
 
-      {!ipAllowlistEnabled() ? (
+      {!ipEnabled ? (
         <div className="card border-amber-300 bg-amber-50">
           <p className="text-sm">
-            ⚠️ <strong>OFFICE_IP_ALLOWLIST</strong> 未設定，目前任何 IP 都能打卡。
-            正式環境請設定辦公室 IP。
+            ⚠️ 目前**沒有 IP 限制**，任何網路都能打卡。
+            {session.user.role === "ADMIN" ? (
+              <>
+                {" "}
+                <Link href="/admin/settings" className="underline">到設定頁加上辦公室 IP</Link>。
+              </>
+            ) : (
+              " 請聯絡管理員設定辦公室 IP。"
+            )}
           </p>
         </div>
       ) : null}
@@ -171,7 +179,7 @@ export default async function DashboardPage() {
           </li>
           <li>
             辦公室 IP 限制：
-            {ipAllowlistEnabled() ? (
+            {ipEnabled ? (
               <span className="badge badge-success ml-2">已啟用</span>
             ) : (
               <span className="badge badge-danger ml-2">未啟用</span>

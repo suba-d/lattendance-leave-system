@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
 import { cancelLeaveAction } from "@/server/actions/leave";
+import ReceiptCell from "@/components/receipt-cell";
 
 export default async function LeaveHistoryPage({
   searchParams,
@@ -18,7 +19,18 @@ export default async function LeaveHistoryPage({
     where: { userId: session.user.id },
     orderBy: { startAt: "desc" },
     take: 50,
-    include: { leaveType: true },
+    select: {
+      id: true,
+      startAt: true,
+      endAt: true,
+      hours: true,
+      unit: true,
+      reason: true,
+      receiptUrl: true,
+      receiptMimeType: true,
+      status: true,
+      leaveType: { select: { name: true } },
+    },
   });
 
   return (
@@ -43,6 +55,7 @@ export default async function LeaveHistoryPage({
                 <th className="py-2">期間</th>
                 <th className="py-2">時數</th>
                 <th className="py-2">事由</th>
+                <th className="py-2">收據</th>
                 <th className="py-2">狀態</th>
                 <th className="py-2"></th>
               </tr>
@@ -58,16 +71,13 @@ export default async function LeaveHistoryPage({
                   <td className="py-2">{l.hours.toString()}</td>
                   <td className="py-2 max-w-xs">
                     <div className="truncate">{l.reason ?? "—"}</div>
-                    {l.receiptUrl ? (
-                      <a
-                        href={l.receiptUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        📎 單據
-                      </a>
-                    ) : null}
+                  </td>
+                  <td className="py-2">
+                    <ReceiptCell
+                      leaveId={l.id}
+                      hasBlob={!!l.receiptMimeType}
+                      legacyUrl={l.receiptUrl}
+                    />
                   </td>
                   <td className="py-2">
                     {l.status === LeaveStatus.ACTIVE ? (

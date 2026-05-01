@@ -20,7 +20,8 @@ export const authConfig = {
         path.startsWith("/bind") ||
         path.startsWith("/liff") ||
         path.startsWith("/api/line") ||
-        path.startsWith("/api/healthz");
+        path.startsWith("/api/healthz") ||
+        path.startsWith("/api/cron");
 
       if (isPublic) return true;
       if (isLoginRoute) {

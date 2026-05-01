@@ -2,6 +2,8 @@ import Link from "next/link";
 import { LeaveStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
+import { purgeExpiredReceipts } from "@/lib/receipt-cleanup";
+import ReceiptCell from "@/components/receipt-cell";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,13 @@ export default async function AdminLeavePage({
 }: {
   searchParams: Promise<{ userId?: string; status?: string }>;
 }) {
+  // Lazy retention sweep — clears receipt blobs older than 3 months on every
+  // admin leave page view. Cheap (single UPDATE), idempotent, no external
+  // schedule needed for a 10-person operation.
+  await purgeExpiredReceipts().catch((err) => {
+    console.error("receipt cleanup failed", err);
+  });
+
   const sp = await searchParams;
   const filterUserId = sp?.userId || "";
   const filterStatus = sp?.status || "";
@@ -28,7 +37,22 @@ export default async function AdminLeavePage({
       where,
       orderBy: { createdAt: "desc" },
       take: 200,
-      include: { leaveType: true, user: true },
+      // Explicit select so we don't pull the receipt bytea into the list view.
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        hours: true,
+        unit: true,
+        reason: true,
+        receiptUrl: true,
+        receiptMimeType: true, // boolean-ish indicator of presence
+        status: true,
+        googleEventId: true,
+        lineNotifiedAt: true,
+        leaveType: { select: { name: true } },
+        user: { select: { id: true, name: true } },
+      },
     }),
   ]);
 
@@ -72,6 +96,7 @@ export default async function AdminLeavePage({
               <th className="py-2">期間</th>
               <th className="py-2">時數</th>
               <th className="py-2">事由</th>
+              <th className="py-2">收據</th>
               <th className="py-2">狀態</th>
               <th className="py-2">同步</th>
             </tr>
@@ -92,16 +117,13 @@ export default async function AdminLeavePage({
                 <td className="py-2">{l.hours.toString()}</td>
                 <td className="py-2 max-w-xs">
                   <div className="truncate">{l.reason ?? "—"}</div>
-                  {l.receiptUrl ? (
-                    <a
-                      href={l.receiptUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline"
-                    >
-                      📎 單據
-                    </a>
-                  ) : null}
+                </td>
+                <td className="py-2">
+                  <ReceiptCell
+                    leaveId={l.id}
+                    hasBlob={!!l.receiptMimeType}
+                    legacyUrl={l.receiptUrl}
+                  />
                 </td>
                 <td className="py-2">
                   {l.status === LeaveStatus.ACTIVE ? (
@@ -122,3 +144,4 @@ export default async function AdminLeavePage({
     </div>
   );
 }
+

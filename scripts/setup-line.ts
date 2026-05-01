@@ -41,7 +41,7 @@ const liffUrl = (path: string) =>
   `https://liff.line.me/${LIFF_ID}?to=${encodeURIComponent(path)}`;
 
 const areas: AreaSpec[] = [
-  { x: 0,         y: 0,     w: COL_W, h: ROW_H, label: "打卡",     action: { type: "uri", uri: liffUrl("/dashboard") } },
+  { x: 0,         y: 0,     w: COL_W, h: ROW_H, label: "打卡",     action: { type: "uri", uri: liffUrl("/clock") } },
   { x: COL_W,     y: 0,     w: COL_W, h: ROW_H, label: "我要請假", action: { type: "uri", uri: liffUrl("/leave/new") } },
   { x: 2 * COL_W, y: 0,     w: COL_W, h: ROW_H, label: "特休餘額", action: { type: "uri", uri: liffUrl("/dashboard") } },
   { x: 0,         y: ROW_H, w: COL_W, h: ROW_H, label: "我的請假", action: { type: "uri", uri: liffUrl("/leave") } },

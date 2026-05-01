@@ -9,6 +9,10 @@ import { requireUser } from "@/lib/auth";
 import { createLeaveEvent, deleteLeaveEvent } from "@/lib/google-calendar";
 import { pushLineText } from "@/lib/line";
 import { formatGroupLeaveNotice } from "@/lib/leave-format";
+import {
+  validateReceiptFile,
+  receiptErrorMessage,
+} from "@/lib/receipt";
 
 const submitSchema = z.object({
   leaveTypeId: z.string().min(1),
@@ -72,6 +76,31 @@ export async function submitLeaveAction(formData: FormData): Promise<void> {
     redirect(`/leave/new?error=${encodeURIComponent("假別無效")}`);
   }
 
+  // Receipt: required for SICK leave, optional otherwise.
+  const file = formData.get("receipt");
+  let receiptBytes: Uint8Array<ArrayBuffer> | null = null;
+  let receiptMimeType: string | null = null;
+
+  const isSick = leaveType.key === "SICK";
+  const hasFile = file instanceof File && file.size > 0;
+
+  if (isSick && !hasFile) {
+    redirect(
+      `/leave/new?error=${encodeURIComponent(receiptErrorMessage("missing"))}`,
+    );
+  }
+  if (hasFile) {
+    const validation = validateReceiptFile(file as File);
+    if (!validation.ok) {
+      redirect(
+        `/leave/new?error=${encodeURIComponent(receiptErrorMessage(validation.reason))}`,
+      );
+    }
+    const buf = await (file as File).arrayBuffer();
+    receiptBytes = new Uint8Array(buf as ArrayBuffer);
+    receiptMimeType = validation.mimeType;
+  }
+
   const hours = calcHours(startAt, endAt, data.unit);
 
   const created = await prisma.leaveRequest.create({
@@ -83,6 +112,8 @@ export async function submitLeaveAction(formData: FormData): Promise<void> {
       unit: data.unit,
       hours: new Prisma.Decimal(hours),
       reason: data.reason,
+      receiptData: receiptBytes,
+      receiptMimeType: receiptMimeType,
       status: LeaveStatus.ACTIVE,
     },
     include: { leaveType: true, user: true },

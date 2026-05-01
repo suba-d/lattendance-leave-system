@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
+import { workMillis, formatWorkHours } from "@/lib/work-hours";
 
 export default async function AttendancePage() {
   const session = await auth();
@@ -38,6 +39,7 @@ export default async function AttendancePage() {
                 <th className="py-2">日期</th>
                 <th className="py-2">上班</th>
                 <th className="py-2">下班</th>
+                <th className="py-2">工時</th>
                 <th className="py-2">所有打卡</th>
                 <th className="py-2">IP</th>
               </tr>
@@ -49,6 +51,7 @@ export default async function AttendancePage() {
                 );
                 const firstIn = ordered.find((e) => e.kind === "IN");
                 const lastOut = [...ordered].reverse().find((e) => e.kind === "OUT");
+                const ms = workMillis(ordered);
                 return (
                   <tr key={date} className="border-b border-[var(--color-border)] last:border-0">
                     <td className="py-2">{date}</td>
@@ -58,6 +61,7 @@ export default async function AttendancePage() {
                     <td className="py-2">
                       {lastOut ? formatDateTimeInOfficeTZ(lastOut.occurredAt, "HH:mm") : "—"}
                     </td>
+                    <td className="py-2 font-medium">{formatWorkHours(ms)}</td>
                     <td className="py-2">
                       {ordered
                         .map(
