@@ -107,16 +107,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
 
     // Standard LINE OAuth (web flow) — only registered if env vars set.
-    // Drop PKCE: LINE's OIDC support has historically been spotty with
-    // Auth.js's PKCE flow (callback fails with a generic OAuth provider
-    // error and no cause); the manual bind flow which omits PKCE works
-    // fine. State + nonce checks are kept.
+    // Auth.js's default checks (pkce + state + nonce) are kept; without
+    // PKCE, Auth.js skips id_token decoding and `profile.sub` becomes
+    // undefined, so it generates a random UUID as user.id and breaks the
+    // lineUserId lookup. The earlier OAuthCallbackError that triggered
+    // dropping PKCE was actually fixed by setting AUTH_URL (PR #17),
+    // not by removing PKCE — restoring defaults now.
     ...(lineLoginEnabled
       ? [
           LINE({
             clientId: LINE_LOGIN_CHANNEL_ID,
             clientSecret: LINE_LOGIN_CHANNEL_SECRET,
-            checks: ["state", "nonce"],
           }),
         ]
       : []),
