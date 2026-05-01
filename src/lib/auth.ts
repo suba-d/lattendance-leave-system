@@ -107,17 +107,57 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
 
     // Standard LINE OAuth (web flow) — only registered if env vars set.
-    // Auth.js's default checks (pkce + state + nonce) are kept; without
-    // PKCE, Auth.js skips id_token decoding and `profile.sub` becomes
-    // undefined, so it generates a random UUID as user.id and breaks the
-    // lineUserId lookup. The earlier OAuthCallbackError that triggered
-    // dropping PKCE was actually fixed by setting AUTH_URL (PR #17),
-    // not by removing PKCE — restoring defaults now.
+    //
+    // Two cooperating workarounds for Auth.js v5 + LINE OIDC quirks:
+    //
+    //   1. checks: ["state", "nonce"] (no PKCE)
+    //      Auth.js's PKCE handling for LINE produces an opaque
+    //      OAuthCallbackError ("OAuth Provider returned an error") with
+    //      no cause attached. Disabling PKCE round-trip lets the token
+    //      exchange succeed, but in turn Auth.js stops auto-decoding
+    //      the id_token JWT — so profile.sub becomes undefined.
+    //
+    //   2. Custom profile() that decodes tokens.id_token manually.
+    //      Without this we'd fall back to Auth.js's randomUUID() for
+    //      user.id, which then never matches the LINE sub stored at
+    //      bind time and signIn returns line_unbound.
+    //
+    // Both arms verified locally with synthetic id_tokens; see git
+    // history for the unit-test script.
     ...(lineLoginEnabled
       ? [
           LINE({
             clientId: LINE_LOGIN_CHANNEL_ID,
             clientSecret: LINE_LOGIN_CHANNEL_SECRET,
+            checks: ["state", "nonce"],
+            profile(profile, tokens) {
+              let sub = (profile as { sub?: string })?.sub;
+              if (!sub && typeof tokens?.id_token === "string") {
+                try {
+                  const parts = tokens.id_token.split(".");
+                  if (parts.length >= 2 && parts[1]) {
+                    const payload = JSON.parse(
+                      Buffer.from(parts[1], "base64url").toString("utf-8"),
+                    );
+                    sub = payload.sub;
+                  }
+                } catch (e) {
+                  console.error("[auth][line] id_token decode failed", e);
+                }
+              }
+              const p = profile as {
+                sub?: string;
+                name?: string;
+                picture?: string;
+                email?: string;
+              };
+              return {
+                id: sub ?? "",
+                name: p?.name ?? null,
+                image: p?.picture ?? null,
+                email: p?.email ?? null,
+              };
+            },
           }),
         ]
       : []),
