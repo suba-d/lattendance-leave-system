@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { exchangeLineCode, verifyLineIdToken } from "@/lib/line-oauth";
 import { signIn } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
-import { verifyBindState } from "@/lib/bind-state";
+import { verifyOauthState } from "@/lib/bind-state";
 
 const STATE_COOKIE = "lattendance_bind_state";
 
@@ -15,8 +15,12 @@ function originOf(req: NextRequest): string {
   return host ? `${proto}://${host}` : "";
 }
 
-function fail(req: NextRequest, reason: string): NextResponse {
+function failBind(req: NextRequest, reason: string): NextResponse {
   return NextResponse.redirect(new URL(`/bind/invalid?reason=${reason}`, req.url));
+}
+
+function failLogin(req: NextRequest, reason: string): NextResponse {
+  return NextResponse.redirect(new URL(`/login?error=${reason}`, req.url));
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse | Response> {
@@ -25,8 +29,12 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
+  // We don't know which mode (bind vs login) until we parse state, so when
+  // OAuth itself errored upstream, default to /login since most users hit
+  // that path. Bind users would have manually clicked an invite link, so
+  // they at least see something usable.
   if (error || !code || !state) {
-    return fail(req, "oauth_error");
+    return failLogin(req, "oauth_error");
   }
 
   const cookieStore = await cookies();
@@ -34,53 +42,65 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   cookieStore.delete(STATE_COOKIE);
 
   if (!cookieState || cookieState !== state) {
-    return fail(req, "state_mismatch");
+    return failLogin(req, "state_mismatch");
   }
 
-  const verified = verifyBindState(state, process.env.AUTH_SECRET || "");
+  const verified = verifyOauthState(state, process.env.AUTH_SECRET || "");
   if (!verified) {
-    return fail(req, "state_mismatch");
+    return failLogin(req, "state_mismatch");
   }
-
-  const invite = await prisma.lineBindInvite.findUnique({
-    where: { token: verified.token },
-  });
-  if (!invite) return fail(req, "not_found");
-  if (invite.usedAt) return fail(req, "used");
-  if (invite.expiresAt < new Date()) return fail(req, "expired");
 
   const tokens = await exchangeLineCode({
     code,
     redirectUri: `${originOf(req)}/api/line/bind/callback`,
   });
-  if (!tokens) return fail(req, "token_exchange_failed");
+  if (!tokens) {
+    return verified.mode === "bind"
+      ? failBind(req, "token_exchange_failed")
+      : failLogin(req, "token_exchange_failed");
+  }
 
   const lineUserId = await verifyLineIdToken(tokens.idToken);
-  if (!lineUserId) return fail(req, "id_token_invalid");
+  if (!lineUserId) {
+    return verified.mode === "bind"
+      ? failBind(req, "id_token_invalid")
+      : failLogin(req, "id_token_invalid");
+  }
 
-  // Reject if this LINE userId is already bound to a different employee.
+  // ---- LOGIN mode: just look up an already-bound user ------------------
+  if (verified.mode === "login") {
+    const user = await prisma.user.findUnique({ where: { lineUserId } });
+    if (!user || !user.active) {
+      return failLogin(req, "line_unbound");
+    }
+    await signIn("line-liff", {
+      idToken: tokens.idToken,
+      redirectTo: "/dashboard",
+    });
+    return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
+
+  // ---- BIND mode: bind invite + sign in --------------------------------
+  const invite = await prisma.lineBindInvite.findUnique({
+    where: { token: verified.token },
+  });
+  if (!invite) return failBind(req, "not_found");
+  if (invite.usedAt) return failBind(req, "used");
+  if (invite.expiresAt < new Date()) return failBind(req, "expired");
+
   const existing = await prisma.user.findUnique({ where: { lineUserId } });
   if (existing && existing.id !== invite.userId) {
-    return fail(req, "conflict");
+    return failBind(req, "conflict");
   }
 
   await prisma.$transaction([
-    prisma.user.update({
-      where: { id: invite.userId },
-      data: { lineUserId },
-    }),
-    prisma.lineBindInvite.update({
-      where: { id: invite.id },
-      data: { usedAt: new Date() },
-    }),
+    prisma.user.update({ where: { id: invite.userId }, data: { lineUserId } }),
+    prisma.lineBindInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } }),
   ]);
 
-  // Mint an Auth.js session via the LIFF credentials provider, which verifies
-  // the same id_token and looks up the (now-bound) user.
   await signIn("line-liff", {
     idToken: tokens.idToken,
     redirectTo: "/dashboard",
   });
-
   return NextResponse.redirect(new URL("/dashboard", req.url));
 }
