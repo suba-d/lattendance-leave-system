@@ -195,16 +195,16 @@ async function importUsers(rows: LegacyUser[]) {
   console.log(`✓ users: created=${created} skipped=${skipped}`);
 }
 
-async function importLeaveBalances(users: LegacyUser[], records: LegacyRecord[]) {
-  // Sum used hours per (user_id, key).
-  const usedByKey = new Map<string, number>();
-  for (const r of records) {
-    const key = LEAVE_TYPE_KEY[r.leave_type];
-    if (!key) continue;
-    const k = `${r.user_id}|${key}`;
-    usedByKey.set(k, (usedByKey.get(k) ?? 0) + r.days * 8);
-  }
-
+async function importLeaveBalances(users: LegacyUser[], _records: LegacyRecord[]) {
+  // The legacy `vacation_days / sick_days / ...` columns store the user's
+  // *current remaining* balance at dump time. Carry that over verbatim as
+  // the new system's totalHours for the import year — we treat it as
+  // "what's left for use going forward". Past usage is preserved as
+  // LeaveRequest rows but does NOT inflate the totalHours.
+  //
+  // (Earlier version of this code added past usage on top of remaining,
+  // which then double-counted because the dashboard's "used" aggregator
+  // only sums current-year LeaveRequests. Fixed in PR #25.)
   const year = new Date().getFullYear();
   const leaveTypes = await prisma.leaveType.findMany();
   const typeByKey = new Map(leaveTypes.map((t) => [t.key, t]));
@@ -217,8 +217,7 @@ async function importLeaveBalances(users: LegacyUser[], records: LegacyRecord[])
 
     for (const [col, key] of Object.entries(BALANCE_COL_TO_KEY)) {
       const remainingDays = (u as unknown as Record<string, number>)[col] ?? 0;
-      const usedHours = usedByKey.get(`${u.id}|${key}`) ?? 0;
-      const totalHours = remainingDays * 8 + usedHours;
+      const totalHours = remainingDays * 8;
 
       const lt = typeByKey.get(key);
       if (!lt) continue;
