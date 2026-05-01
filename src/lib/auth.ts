@@ -127,9 +127,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider === "line") {
         // `user.id` from the LINE provider is the LINE userId.
         const lineUserId = user.id;
+        console.log("[auth][line] login attempt", {
+          lineUserIdFromAuth: lineUserId,
+          lineUserIdLength: lineUserId?.length,
+        });
         if (!lineUserId) return false;
         const matched = await prisma.user.findUnique({ where: { lineUserId } });
         if (!matched || !matched.active) {
+          // Log every bound user so we can compare what's stored vs what
+          // Auth.js extracted (case, length, prefix differences).
+          const allBound = await prisma.user.findMany({
+            where: { lineUserId: { not: null } },
+            select: { id: true, email: true, lineUserId: true },
+          });
+          console.log("[auth][line] no match", {
+            attemptedLineUserId: lineUserId,
+            existingBindings: allBound,
+          });
           // Reject and bounce to a friendly page.
           return "/login?error=line_unbound";
         }
