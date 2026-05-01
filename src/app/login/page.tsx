@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { auth, signIn } from "@/lib/auth";
 import { lineLoginEnabled } from "@/lib/env";
+import { loginWithLineAction } from "@/server/actions/bind-flow";
 
 async function emailLoginAction(formData: FormData) {
   "use server";
@@ -17,12 +18,6 @@ async function emailLoginAction(formData: FormData) {
     }
     throw e;
   }
-}
-
-async function lineLoginAction(formData: FormData) {
-  "use server";
-  const from = String(formData.get("from") || "/dashboard");
-  await signIn("line", { redirectTo: from || "/dashboard" });
 }
 
 export default async function LoginPage({
@@ -47,11 +42,25 @@ export default async function LoginPage({
             您的 LINE 帳號尚未綁定到員工帳號，請聯絡管理員索取綁定連結。
           </div>
         ) : null}
+        {sp?.error === "oauth_error" ? (
+          <div className="mb-4 p-3 rounded bg-red-50 border border-red-300 text-sm">
+            LINE 授權失敗，請再試一次。
+          </div>
+        ) : null}
+        {sp?.error === "state_mismatch" ? (
+          <div className="mb-4 p-3 rounded bg-red-50 border border-red-300 text-sm">
+            登入逾時或 cookie 異常，請重新嘗試。
+          </div>
+        ) : null}
+        {sp?.error === "token_exchange_failed" || sp?.error === "id_token_invalid" ? (
+          <div className="mb-4 p-3 rounded bg-red-50 border border-red-300 text-sm">
+            LINE 驗證失敗（{sp.error}）。請聯絡管理員。
+          </div>
+        ) : null}
 
         {mode === "line" ? (
           <>
-            <form action={lineLoginAction}>
-              <input type="hidden" name="from" value={from} />
+            <form action={loginWithLineAction}>
               <button
                 type="submit"
                 className="btn btn-primary w-full"

@@ -1,12 +1,11 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import LINE from "next-auth/providers/line";
 import bcrypt from "bcryptjs";
 import { inspect } from "node:util";
 import { z } from "zod";
 import { prisma } from "./db";
 import { authConfig } from "./auth.config";
-import { LINE_LOGIN_CHANNEL_ID, LINE_LOGIN_CHANNEL_SECRET, lineLoginEnabled } from "./env";
+import { LINE_LOGIN_CHANNEL_ID } from "./env";
 
 declare module "next-auth" {
   interface Session {
@@ -106,61 +105,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
 
-    // Standard LINE OAuth (web flow) — only registered if env vars set.
+    // We deliberately do NOT register Auth.js's built-in LINE OIDC
+    // provider here. After two rounds of debugging (PR #19/#21/#22) it
+    // was clear Auth.js's LINE OIDC implementation in v5 is unreliable
+    // for our use case — PKCE on causes opaque OAuthCallbackError;
+    // PKCE off makes id_token decoding silently drop, generating a
+    // random UUID for user.id that doesn't match the bound lineUserId.
     //
-    // Two cooperating workarounds for Auth.js v5 + LINE OIDC quirks:
-    //
-    //   1. checks: ["state", "nonce"] (no PKCE)
-    //      Auth.js's PKCE handling for LINE produces an opaque
-    //      OAuthCallbackError ("OAuth Provider returned an error") with
-    //      no cause attached. Disabling PKCE round-trip lets the token
-    //      exchange succeed, but in turn Auth.js stops auto-decoding
-    //      the id_token JWT — so profile.sub becomes undefined.
-    //
-    //   2. Custom profile() that decodes tokens.id_token manually.
-    //      Without this we'd fall back to Auth.js's randomUUID() for
-    //      user.id, which then never matches the LINE sub stored at
-    //      bind time and signIn returns line_unbound.
-    //
-    // Both arms verified locally with synthetic id_tokens; see git
-    // history for the unit-test script.
-    ...(lineLoginEnabled
-      ? [
-          LINE({
-            clientId: LINE_LOGIN_CHANNEL_ID,
-            clientSecret: LINE_LOGIN_CHANNEL_SECRET,
-            checks: ["state", "nonce"],
-            profile(profile, tokens) {
-              let sub = (profile as { sub?: string })?.sub;
-              if (!sub && typeof tokens?.id_token === "string") {
-                try {
-                  const parts = tokens.id_token.split(".");
-                  if (parts.length >= 2 && parts[1]) {
-                    const payload = JSON.parse(
-                      Buffer.from(parts[1], "base64url").toString("utf-8"),
-                    );
-                    sub = payload.sub;
-                  }
-                } catch (e) {
-                  console.error("[auth][line] id_token decode failed", e);
-                }
-              }
-              const p = profile as {
-                sub?: string;
-                name?: string;
-                picture?: string;
-                email?: string;
-              };
-              return {
-                id: sub ?? "",
-                name: p?.name ?? null,
-                image: p?.picture ?? null,
-                email: p?.email ?? null,
-              };
-            },
-          }),
-        ]
-      : []),
+    // Instead, /api/line/bind/callback handles BOTH bind and login
+    // OAuth round trips (state cookie carries the mode tag), using the
+    // same hand-rolled OAuth code that already works for binding. After
+    // verifying the id_token via LINE's /oauth2/v2.1/verify endpoint we
+    // mint a session via the line-liff Credentials provider above —
+    // which receives the id_token and re-verifies it the same way.
   ],
   callbacks: {
     ...authConfig.callbacks,
