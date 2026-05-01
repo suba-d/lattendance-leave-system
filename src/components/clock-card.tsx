@@ -52,9 +52,13 @@ export function ClockCard({
         </button>
       </div>
       {message ? (
-        <p className={`mt-3 text-sm ${message.type === "ok" ? "text-green-600" : "text-red-600"}`}>
+        <pre
+          className={`mt-3 text-sm whitespace-pre-wrap font-sans ${
+            message.type === "ok" ? "text-green-600" : "text-red-600"
+          }`}
+        >
           {message.text}
-        </p>
+        </pre>
       ) : null}
     </div>
   );

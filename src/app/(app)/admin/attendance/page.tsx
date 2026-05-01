@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
+import { workMillis, formatWorkHours } from "@/lib/work-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,7 @@ export default async function AdminAttendancePage({
                 <th className="py-2">員工</th>
                 <th className="py-2">上班</th>
                 <th className="py-2">下班</th>
+                <th className="py-2">工時</th>
                 <th className="py-2">所有打卡</th>
                 <th className="py-2">IP</th>
               </tr>
@@ -84,6 +86,7 @@ export default async function AdminAttendancePage({
                 const ordered = [...list].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
                 const firstIn = ordered.find((e) => e.kind === "IN");
                 const lastOut = [...ordered].reverse().find((e) => e.kind === "OUT");
+                const ms = workMillis(ordered);
                 return (
                   <tr key={uid} className="border-b border-[var(--color-border)] last:border-0">
                     <td className="py-2">
@@ -97,6 +100,7 @@ export default async function AdminAttendancePage({
                     <td className="py-2">
                       {lastOut ? formatDateTimeInOfficeTZ(lastOut.occurredAt, "HH:mm") : "—"}
                     </td>
+                    <td className="py-2 font-medium">{formatWorkHours(ms)}</td>
                     <td className="py-2">
                       {ordered
                         .map(

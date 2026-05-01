@@ -1,4 +1,57 @@
 import { OFFICE_IP_ALLOWLIST, TRUST_PROXY } from "./env";
+import { prisma } from "./db";
+
+const SETTING_KEY = "office.ip_allowlist";
+
+// IP allowlist source order (highest precedence first):
+//   1. AppSetting row keyed by SETTING_KEY (admin-managed via /admin/settings)
+//      — present even when empty, which means "explicitly disabled"
+//   2. OFFICE_IP_ALLOWLIST env var (only when DB row absent)
+//   3. Empty → IP enforcement disabled
+export async function getEffectiveAllowlist(): Promise<string[]> {
+  const row = await prisma.appSetting.findUnique({ where: { key: SETTING_KEY } });
+  if (row) {
+    try {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        return parsed.map((s) => s.trim()).filter(Boolean);
+      }
+    } catch {
+      // Bad JSON in DB — fall through to env fallback rather than error.
+    }
+  }
+  return OFFICE_IP_ALLOWLIST;
+}
+
+export async function setEffectiveAllowlist(rules: string[]): Promise<void> {
+  const cleaned = rules.map((r) => r.trim()).filter(Boolean);
+  await prisma.appSetting.upsert({
+    where: { key: SETTING_KEY },
+    update: { value: JSON.stringify(cleaned) },
+    create: { key: SETTING_KEY, value: JSON.stringify(cleaned) },
+  });
+}
+
+export function isValidIpRule(s: string): boolean {
+  const trimmed = s.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes(":")) {
+    // IPv6 exact match (no CIDR support).
+    try {
+      new URL(`http://[${trimmed}]`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (trimmed.includes("/")) {
+    const [base, bitsStr] = trimmed.split("/");
+    const bits = Number(bitsStr);
+    if (!Number.isInteger(bits) || bits < 0 || bits > 32) return false;
+    return ipv4ToInt(base) !== null;
+  }
+  return ipv4ToInt(trimmed) !== null;
+}
 
 // Returns the first IP from a comma-separated XFF header, trimmed.
 function parseXff(header: string | null | undefined): string | null {
@@ -65,7 +118,7 @@ function normalizeIpv6(ip: string): string | null {
   }
 }
 
-export function ipMatchesAllowlist(ip: string, rules = OFFICE_IP_ALLOWLIST): boolean {
+export function ipMatchesAllowlist(ip: string, rules: string[]): boolean {
   if (rules.length === 0) return true; // empty = disabled
   // Strip IPv6 zone id if any.
   const cleaned = ip.includes("%") ? ip.split("%")[0] : ip;
@@ -85,6 +138,7 @@ export function ipMatchesAllowlist(ip: string, rules = OFFICE_IP_ALLOWLIST): boo
   return false;
 }
 
-export function ipAllowlistEnabled(): boolean {
-  return OFFICE_IP_ALLOWLIST.length > 0;
+export async function ipAllowlistEnabled(): Promise<boolean> {
+  const rules = await getEffectiveAllowlist();
+  return rules.length > 0;
 }

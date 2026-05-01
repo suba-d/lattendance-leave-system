@@ -130,6 +130,11 @@ model LeaveRequest {
   // Optional supporting document (e.g. medical receipt). Carried over from
   // the old system; new submissions can leave this null.
   receiptUrl      String?
+  // Receipt image stored directly in the database. Required for SICK leave
+  // submissions in the new system. Auto-cleared 3 months after endAt by
+  // /api/cron/cleanup-receipts and the lazy cleanup on /admin/leave.
+  receiptData     Bytes?
+  receiptMimeType String?
   status          LeaveStatus  @default(ACTIVE)
   // Integration sync state. Null means "not yet synced" or disabled.
   googleEventId   String?

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
 import { annualLeaveHoursAsOf } from "@/lib/leave-balance";
 import { cancelLeaveAction } from "@/server/actions/leave";
+import ReceiptCell from "@/components/receipt-cell";
+import { workMillis, formatWorkHours } from "@/lib/work-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,19 @@ export default async function AdminUserDetailPage({
       where: { userId: id },
       orderBy: { startAt: "desc" },
       take: 50,
-      include: { leaveType: true },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        hours: true,
+        unit: true,
+        reason: true,
+        receiptUrl: true,
+        receiptMimeType: true,
+        status: true,
+        leaveType: { select: { name: true } },
+        leaveTypeId: true,
+      },
     }),
     prisma.clockEvent.findMany({
       where: { userId: id, occurredAt: { gte: since } },
@@ -152,6 +166,7 @@ export default async function AdminUserDetailPage({
                   <th className="py-2">期間</th>
                   <th className="py-2">時數</th>
                   <th className="py-2">事由</th>
+                  <th className="py-2">收據</th>
                   <th className="py-2">狀態</th>
                   <th className="py-2"></th>
                 </tr>
@@ -167,16 +182,13 @@ export default async function AdminUserDetailPage({
                     <td className="py-2">{l.hours.toString()}</td>
                     <td className="py-2 max-w-xs">
                       <div className="truncate">{l.reason ?? "—"}</div>
-                      {l.receiptUrl ? (
-                        <a
-                          href={l.receiptUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          📎 單據
-                        </a>
-                      ) : null}
+                    </td>
+                    <td className="py-2">
+                      <ReceiptCell
+                        leaveId={l.id}
+                        hasBlob={!!l.receiptMimeType}
+                        legacyUrl={l.receiptUrl}
+                      />
                     </td>
                     <td className="py-2">
                       {l.status === LeaveStatus.ACTIVE ? (
@@ -212,6 +224,7 @@ export default async function AdminUserDetailPage({
                   <th className="py-2">日期</th>
                   <th className="py-2">上班</th>
                   <th className="py-2">下班</th>
+                  <th className="py-2">工時</th>
                   <th className="py-2">所有打卡</th>
                   <th className="py-2">IP</th>
                 </tr>
@@ -223,6 +236,7 @@ export default async function AdminUserDetailPage({
                   );
                   const firstIn = ordered.find((e) => e.kind === "IN");
                   const lastOut = [...ordered].reverse().find((e) => e.kind === "OUT");
+                  const ms = workMillis(ordered);
                   return (
                     <tr key={date} className="border-b border-[var(--color-border)] last:border-0">
                       <td className="py-2">{date}</td>
@@ -232,6 +246,7 @@ export default async function AdminUserDetailPage({
                       <td className="py-2">
                         {lastOut ? formatDateTimeInOfficeTZ(lastOut.occurredAt, "HH:mm") : "—"}
                       </td>
+                      <td className="py-2 font-medium">{formatWorkHours(ms)}</td>
                       <td className="py-2">
                         {ordered
                           .map(

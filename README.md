@@ -7,7 +7,17 @@
 - **Hosting**：AWS Amplify（與 nshop 同一個帳號）
 - **CI**：GitHub Actions（每個 PR 自動跑 typecheck + build）
 
-## 功能
+## 功能（最新）
+
+- 員工 LINE 登入（綁定一次後永久免密碼）
+- 申請請假，**病假必須附收據照片**（3MB 上限、JPG/PNG/WebP）
+- 收據存在 Postgres bytea，3 個月後**自動清除**（lazy + cron）
+- Admin 後台看所有員工的請假紀錄、收據縮圖、打卡紀錄、**每日工時**
+- Admin **直接在後台**管理辦公室 IP allowlist（不用 redeploy）
+- **`/clock`** 獨立打卡頁，行動裝置友善，給 LINE Rich Menu 用
+- 自動同步請假到 Google Calendar + LINE 群組通知
+
+## 功能（細項）
 
 - **LINE 登入**為主，員工不用記密碼（Email/密碼藏在 `?mode=email` 作為救援用）
 - **LIFF**：員工從 LINE Rich Menu 直接打開系統，免跳出 LINE
@@ -57,7 +67,8 @@ CREATE SCHEMA IF NOT EXISTS lattendance;
 | `DATABASE_URL` | Supabase → Connect popup → **Session pooler** URI，結尾加 `?schema=lattendance` | ✅ |
 | `DIRECT_URL` | 同上 | ✅ |
 | `AUTH_SECRET` | 本機跑 `openssl rand -base64 32` 拿到的**輸出字串**（不是這條指令本身） | ✅ |
-| `OFFICE_IP_ALLOWLIST` | 辦公室固定對外 IP，例：`203.0.113.10` | ✅ 正式上線必填 |
+| `OFFICE_IP_ALLOWLIST` | 辦公室固定對外 IP，例：`203.0.113.10`（可後台管理覆蓋） | optional |
+| `CRON_SECRET` | 給 `/api/cron/cleanup-receipts` 用的 shared secret | optional |
 | `APP_URL` | 部署後的對外網址，例：`https://attendance.example.com` | ✅ 啟用 LINE 後必填 |
 | `SEED_ADMIN_EMAIL` | 第一個管理員 Email（救援登入用） | ✅ |
 | `SEED_ADMIN_PASSWORD` | 第一個管理員密碼 | ✅ |
@@ -239,6 +250,15 @@ scripts/
 amplify.yml          # Amplify build + migrate + seed + import + .env.production
 .github/workflows/   # CI
 ```
+
+## 可選：自動清除收據（cron）
+
+收據 lazy cleanup 在 admin 開 `/admin/leave` 時就會跑（10 人公司一週至少有人開一次，足夠了）。如果想要更主動：
+
+1. Amplify 加 env var `CRON_SECRET=<隨機字串>`
+2. 用 cron-job.org（免費）每天打 `https://<你的網址>/api/cron/cleanup-receipts?secret=<那串字串>`
+
+不設 `CRON_SECRET` 時 endpoint 會 reject 全部呼叫，安全 default。
 
 ## Roadmap
 
