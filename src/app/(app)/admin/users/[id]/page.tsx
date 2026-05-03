@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { formatDateTimeInOfficeTZ } from "@/lib/date";
 import { annualLeaveHoursAsOf } from "@/lib/leave-balance";
 import { cancelLeaveAction } from "@/server/actions/leave";
+import { updateLeaveBalanceAction } from "@/server/actions/balance";
 import ReceiptCell from "@/components/receipt-cell";
 import { workMillis, formatWorkHours } from "@/lib/work-hours";
 
@@ -12,10 +13,13 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ saved?: string; error?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const year = new Date().getFullYear();
 
   const user = await prisma.user.findUnique({
@@ -33,7 +37,7 @@ export default async function AdminUserDetailPage({
   const since = new Date();
   since.setDate(since.getDate() - 30);
 
-  const [leaveRequests, clockEvents, usedSums] = await Promise.all([
+  const [leaveRequests, clockEvents, usedSums, allTypes] = await Promise.all([
     prisma.leaveRequest.findMany({
       where: { userId: id },
       orderBy: { startAt: "desc" },
@@ -65,7 +69,15 @@ export default async function AdminUserDetailPage({
         startAt: { gte: new Date(year, 0, 1) },
       },
     }),
+    prisma.leaveType.findMany({
+      where: { active: true },
+      orderBy: { sortOrder: "asc" },
+    }),
   ]);
+
+  // Build a per-leaveType lookup so we can render every active type even if
+  // a balance row hasn't been created yet (admin can edit & save to create).
+  const balanceByTypeId = new Map(user.leaveBalances.map((b) => [b.leaveTypeId, b]));
 
   const usedByType = new Map(
     usedSums.map((s) => [s.leaveTypeId, Number(s._sum.hours ?? 0)]),
@@ -121,36 +133,75 @@ export default async function AdminUserDetailPage({
       </div>
 
       <div className="card">
-        <h2 className="font-semibold mb-3">{year} 年度假別餘額</h2>
-        {user.leaveBalances.length === 0 ? (
-          <p className="muted text-sm">沒有 {year} 年度的餘額紀錄</p>
-        ) : (
+        <h2 className="font-semibold mb-1">{year} 年度假別餘額</h2>
+        <p className="muted text-xs mb-3">
+          剩餘 = 總額 + 調整 − 今年已用。改完按該列「儲存」生效。
+        </p>
+        {sp?.saved ? (
+          <p className="text-sm text-green-600 mb-3">✓ 已更新</p>
+        ) : null}
+        {sp?.error ? (
+          <p className="text-sm text-red-600 mb-3">{sp.error}</p>
+        ) : null}
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left muted border-b border-[var(--color-border)]">
               <tr>
                 <th className="py-2">假別</th>
-                <th className="py-2">總額</th>
-                <th className="py-2">已用</th>
+                <th className="py-2">總額（天）</th>
+                <th className="py-2">調整（天，可正可負）</th>
+                <th className="py-2">今年已用</th>
                 <th className="py-2">剩餘</th>
+                <th className="py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {user.leaveBalances.map((b) => {
-                const total = Number(b.totalHours) + Number(b.adjustHours);
-                const used = usedByType.get(b.leaveTypeId) ?? 0;
-                const remain = Math.max(0, total - used);
+              {allTypes.map((lt) => {
+                const b = balanceByTypeId.get(lt.id);
+                const totalHours = b ? Number(b.totalHours) : 0;
+                const adjustHours = b ? Number(b.adjustHours) : 0;
+                const usedHours = usedByType.get(lt.id) ?? 0;
+                const remainHours = Math.max(0, totalHours + adjustHours - usedHours);
                 return (
-                  <tr key={b.id} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2"><span className="badge">{b.leaveType.name}</span></td>
-                    <td className="py-2">{(total / 8).toFixed(1)} 天</td>
-                    <td className="py-2">{(used / 8).toFixed(1)} 天</td>
-                    <td className="py-2 font-medium">{(remain / 8).toFixed(1)} 天</td>
+                  <tr key={lt.id} className="border-b border-[var(--color-border)] last:border-0 align-middle">
+                    <td className="py-2">
+                      <span className="badge">{lt.name}</span>
+                    </td>
+                    <td className="py-2" colSpan={2}>
+                      <form action={updateLeaveBalanceAction} className="flex items-center gap-2">
+                        <input type="hidden" name="userId" value={user.id} />
+                        <input type="hidden" name="leaveTypeId" value={lt.id} />
+                        <input
+                          type="number"
+                          name="totalDays"
+                          step="0.5"
+                          min="0"
+                          defaultValue={(totalHours / 8).toFixed(2).replace(/\.?0+$/, "") || "0"}
+                          className="input w-24"
+                          aria-label="總額"
+                        />
+                        <input
+                          type="number"
+                          name="adjustDays"
+                          step="0.5"
+                          defaultValue={(adjustHours / 8).toFixed(2).replace(/\.?0+$/, "") || "0"}
+                          className="input w-24"
+                          aria-label="調整"
+                        />
+                        <button type="submit" className="btn text-xs">儲存</button>
+                      </form>
+                    </td>
+                    <td className="py-2 muted">{(usedHours / 8).toFixed(1)} 天</td>
+                    <td className="py-2 font-medium">{(remainHours / 8).toFixed(1)} 天</td>
+                    <td className="py-2 muted text-xs">
+                      {b?.notes ? <span title={b.notes}>📝</span> : null}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        )}
+        </div>
       </div>
 
       <div className="card">
